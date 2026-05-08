@@ -95,7 +95,7 @@
         .chevron-box.empty { visibility: hidden; }
 
         .node-name { font-weight: 600; font-size: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .node-level { font-size: 0.78em; opacity: 0.5; margin-left: 2px; flex-shrink: 0; }
+
 
         .metric-cell {
             text-align: right;
@@ -388,13 +388,8 @@
             nameEl.innerText = node.name;
             nameEl.title = node.name;
 
-            const levelEl = document.createElement('span');
-            levelEl.className = 'node-level';
-            levelEl.innerText = node.level;
-
             nameCell.appendChild(chevron);
             nameCell.appendChild(nameEl);
-            nameCell.appendChild(levelEl);
             grid.appendChild(nameCell);
 
             // Metric cells
