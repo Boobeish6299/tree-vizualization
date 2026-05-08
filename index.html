@@ -11,6 +11,9 @@
             --text-color: #333333;
             --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             --font-size: 13px;
+            --card-radius: 10px;
+            --card-border: 1px solid rgba(0,0,0,0.08);
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         body {
             font-family: var(--font-family);
@@ -42,12 +45,12 @@
         #main-ui { display: flex; flex-direction: column; position: relative; }
         #loading { font-style: italic; opacity: 0.7; margin-bottom: 6px; }
 
-        /* Grid columns: name | Active | LOC Gen | LOC Acc | WS Credits | LOC Com */
+        /* Grid columns */
         .grid-row {
             display: grid;
             grid-template-columns: 1fr 72px 72px 72px 80px 72px;
             align-items: center;
-            padding: 4px 8px;
+            padding: 6px 12px;
             gap: 4px;
         }
 
@@ -57,8 +60,8 @@
             top: 0;
             z-index: 10;
             background: var(--bg-color);
-            border-bottom: 2px solid rgba(128,128,128,0.25);
-            margin-bottom: 4px;
+            border-bottom: 2px solid rgba(128,128,128,0.2);
+            margin-bottom: 6px;
             font-size: 11px;
             font-weight: 700;
             opacity: 0.75;
@@ -67,35 +70,74 @@
         }
         #col-header .metric-cell { text-align: right; }
 
+        /* ── L2 Card ── */
+        .tree-node-container.level-l2 {
+            border: var(--card-border);
+            border-radius: var(--card-radius);
+            box-shadow: var(--card-shadow);
+            margin-bottom: 10px;
+            overflow: hidden;
+            padding: 2px;
+        }
+
+        /* ── L3 Card ── */
+        .tree-node-container.level-l3 {
+            border: var(--card-border);
+            border-radius: var(--card-radius);
+            box-shadow: var(--card-shadow);
+            margin-bottom: 4px;
+        }
+
+        /* ── L4 Card ── */
+        .tree-node-container.level-l4 {
+            border: var(--card-border);
+            border-radius: var(--card-radius);
+            margin-bottom: 4px;
+            transition: box-shadow 0.2s;
+        }
+        .tree-node-container.level-l4:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
         /* Tree rows */
         .tree-node-container { margin-bottom: 2px; }
 
         .tree-row {
-            border-radius: 5px;
+            border-radius: 8px;
             cursor: pointer;
             transition: background 0.15s;
-            border: 1px solid transparent;
         }
-        .tree-row:hover { background: rgba(128,128,128,0.08); border-color: rgba(128,128,128,0.12); }
+        .tree-row:hover { background: rgba(0, 0, 0, 0.03); }
 
         .name-cell {
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 6px;
             min-width: 0;
         }
-        .chevron-box {
+
+        /* Chevron — simple text arrow, no box */
+        .chevron {
             flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            width: 18px; height: 18px; border-radius: 3px;
-            background: rgba(128,128,128,0.1);
-            font-size: 9px; transition: transform 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            font-size: 14px;
+            color: rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s ease;
+            cursor: pointer;
         }
-        .chevron-box.expanded { transform: rotate(90deg); }
-        .chevron-box.empty { visibility: hidden; }
+        .chevron.expanded { transform: rotate(0deg); }
+        .chevron.empty { visibility: hidden; }
 
-        .node-name { font-weight: 600; font-size: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
+        .node-name {
+            font-weight: 600;
+            font-size: 1em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
 
         .metric-cell {
             text-align: right;
@@ -105,11 +147,10 @@
             white-space: nowrap;
         }
 
+        /* Children container — no dashed line, padding only */
         .children-container {
             display: none;
-            padding-left: 18px;
-            border-left: 1px dashed rgba(128,128,128,0.2);
-            margin-left: 12px;
+            padding: 4px 6px 6px 20px;
         }
         .children-container.expanded { display: block; }
     </style>
@@ -366,6 +407,11 @@
             const wrapper = document.createElement('div');
             wrapper.className = 'tree-node-container';
 
+            // Add level-specific class for card styling
+            if (node.level === 'L2 (VP)') wrapper.classList.add('level-l2');
+            else if (node.level === 'L3 (Manager)') wrapper.classList.add('level-l3');
+            else if (node.level === 'L4 (IC)') wrapper.classList.add('level-l4');
+
             const hasChildren = node.children && Object.keys(node.children).length > 0;
 
             const row = document.createElement('div');
@@ -374,13 +420,13 @@
             const grid = document.createElement('div');
             grid.className = 'grid-row';
 
-            // Name cell: chevron + name + level badge
+            // Name cell: chevron + name
             const nameCell = document.createElement('div');
             nameCell.className = 'name-cell';
 
-            const chevron = document.createElement('div');
-            chevron.className = 'chevron-box';
-            chevron.innerText = '▶';
+            const chevron = document.createElement('span');
+            chevron.className = 'chevron';
+            chevron.innerText = hasChildren ? '›' : '›';
             if (!hasChildren) chevron.classList.add('empty');
 
             const nameEl = document.createElement('span');
@@ -429,8 +475,9 @@
                 wrapper.appendChild(childContainer);
 
                 row.onclick = () => {
-                    childContainer.classList.toggle('expanded');
+                    const isExpanded = childContainer.classList.toggle('expanded');
                     chevron.classList.toggle('expanded');
+                    chevron.innerText = isExpanded ? '∨' : '›';
                 };
             }
 
