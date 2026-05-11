@@ -126,15 +126,17 @@
             text-align: right;
         }
 
-        /* Tree rows */
+        /* Tree nodes — card wraps the entire group (node + children) */
         .tree-node-container {
-            margin-bottom: 4px;
+            background: transparent;
+            border: 1px solid rgba(128, 128, 128, 0.2);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            padding: 2px;
         }
 
         .tree-row {
-            background: transparent;
-            border: 1px solid rgba(128, 128, 128, 0.25);
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             transition: background 0.15s;
         }
