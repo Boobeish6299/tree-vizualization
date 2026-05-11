@@ -45,7 +45,7 @@
         /* Grid columns: name | WS Credits | LOC Gen | LOC Acc | LOC Acc % | LOC Com | Active | Licenses */
         .grid-row {
             display: grid;
-            grid-template-columns: 1fr 80px 72px 72px 72px 72px 65px 90px;
+            grid-template-columns: 1fr 80px 72px 72px 72px 72px 80px 110px;
             align-items: center;
             padding: 4px 8px;
             gap: 4px;
@@ -418,10 +418,7 @@
                     const wsVal = node.metrics[col.idx] || 0;
                     const gmVal = node.metrics[col.idx2] || 0;
                     cell.title = `Windsurf: ${formatFull(wsVal)}, Gemini: ${formatFull(gmVal)}`;
-                    cell.innerHTML =
-                        `<span style="color:#0ea5e9">${formatFull(wsVal)}</span>` +
-                        `<span style="opacity:0.4"> / </span>` +
-                        `<span style="color:#8b5cf6">${formatFull(gmVal)}</span>`;
+                    cell.innerText = `${formatFull(wsVal)} / ${formatFull(gmVal)}`;
                     grid.appendChild(cell);
                     return;
                 }
