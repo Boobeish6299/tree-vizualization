@@ -11,9 +11,6 @@
             --text-color: #333333;
             --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             --font-size: 13px;
-            --card-radius: 10px;
-            --card-border: 1px solid rgba(0,0,0,0.08);
-            --card-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         body {
             font-family: var(--font-family);
@@ -45,12 +42,12 @@
         #main-ui { display: flex; flex-direction: column; position: relative; }
         #loading { font-style: italic; opacity: 0.7; margin-bottom: 6px; }
 
-        /* Grid columns */
+        /* Grid columns: name | WS Credits | LOC Gen | LOC Acc | LOC Acc % | LOC Com | Active | Licenses */
         .grid-row {
             display: grid;
-            grid-template-columns: 1fr 72px 72px 72px 80px 72px;
+            grid-template-columns: 1fr 80px 72px 72px 72px 72px 65px 90px;
             align-items: center;
-            padding: 6px 12px;
+            padding: 4px 8px;
             gap: 4px;
         }
 
@@ -60,8 +57,8 @@
             top: 0;
             z-index: 10;
             background: var(--bg-color);
-            border-bottom: 2px solid rgba(128,128,128,0.2);
-            margin-bottom: 6px;
+            border-bottom: 2px solid rgba(128,128,128,0.25);
+            margin-bottom: 4px;
             font-size: 11px;
             font-weight: 700;
             opacity: 0.75;
@@ -70,75 +67,35 @@
         }
         #col-header .metric-cell { text-align: right; }
 
-        /* ── L2 Card ── */
-        .tree-node-container.level-l2 {
-            border: 1px solid rgba(0,0,0,0.15);
-            border-radius: var(--card-radius);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            margin-bottom: 10px;
-            overflow: hidden;
-            padding: 4px;
-        }
-
-        /* ── L3 Card ── */
-        .tree-node-container.level-l3 {
-            border: 1px solid rgba(0,0,0,0.12);
-            border-radius: var(--card-radius);
-            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-            margin-bottom: 6px;
-            padding: 2px;
-        }
-
-        /* ── L4 Card ── */
-        .tree-node-container.level-l4 {
-            border: var(--card-border);
-            border-radius: var(--card-radius);
-            margin-bottom: 4px;
-            transition: box-shadow 0.2s;
-        }
-        .tree-node-container.level-l4:hover {
-            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        }
-
         /* Tree rows */
         .tree-node-container { margin-bottom: 2px; }
 
         .tree-row {
-            border-radius: 8px;
+            border-radius: 5px;
             cursor: pointer;
             transition: background 0.15s;
+            border: 1px solid transparent;
         }
-        .tree-row:hover { background: rgba(0, 0, 0, 0.03); }
+        .tree-row:hover { background: rgba(128,128,128,0.08); border-color: rgba(128,128,128,0.12); }
 
         .name-cell {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             min-width: 0;
         }
-
-        /* Chevron — simple text arrow, no box */
-        .chevron {
+        .chevron-box {
             flex-shrink: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            font-size: 14px;
-            color: rgba(0, 0, 0, 0.4);
-            transition: transform 0.2s ease;
-            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border-radius: 3px;
+            background: rgba(128,128,128,0.1);
+            font-size: 9px; transition: transform 0.15s;
         }
-        .chevron.expanded { transform: rotate(0deg); }
-        .chevron.empty { visibility: hidden; }
+        .chevron-box.expanded { transform: rotate(90deg); }
+        .chevron-box.empty { visibility: hidden; }
 
-        .node-name {
-            font-weight: 600;
-            font-size: 1em;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
+        .node-name { font-weight: 600; font-size: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .node-level { font-size: 0.78em; opacity: 0.5; margin-left: 2px; flex-shrink: 0; }
 
         .metric-cell {
             text-align: right;
@@ -148,10 +105,11 @@
             white-space: nowrap;
         }
 
-        /* Children container — no dashed line, padding only */
         .children-container {
             display: none;
-            padding: 4px 6px 6px 20px;
+            padding-left: 18px;
+            border-left: 1px dashed rgba(128,128,128,0.2);
+            margin-left: 12px;
         }
         .children-container.expanded { display: block; }
     </style>
@@ -189,17 +147,20 @@
     <script>
         const METRICS = [
             'WS Credits', 'LOC Gen', 'LOC Acc', 'Acc %',
-            'LOC Com', 'Com %', 'Active', 'WS Lic'
+            'LOC Com', 'Com %', 'Active', 'WS Lic', 'GM Lic'
         ];
 
         // Columns to display (order = left to right after the name column)
         // showArrow: true → compare against siblings and show ▲/▼
+        // fmt: optional format type – 'pct' for percentage, 'license' for WS/GM combined
         const COL_DEFS = [
-            { label: 'Active Users', idx: 6, useK: false, showArrow: false },
+            { label: 'WS Credits',   idx: 0, useK: false, showArrow: true  },
             { label: 'LOC Gen',      idx: 1, useK: true,  showArrow: true  },
             { label: 'LOC Acc',      idx: 2, useK: true,  showArrow: true  },
-            { label: 'WS Credits',   idx: 0, useK: false, showArrow: true  },
+            { label: 'Acc %',        idx: 3, useK: false, showArrow: false, fmt: 'pct' },
             { label: 'LOC Com',      idx: 4, useK: true,  showArrow: true  },
+            { label: 'Active Users', idx: 6, useK: false, showArrow: false },
+            { label: 'WS / GM Lic',  idx: 7, useK: false, showArrow: false, fmt: 'license', idx2: 8 },
         ];
 
         function formatK(val) {
@@ -330,7 +291,8 @@
                             METRICS.forEach((m, i) => {
                                 let val = parseFloat(row[metricIdxs[i]]?.value || 0);
                                 if (isNaN(val)) val = 0;
-                                tree[l2].children[l3].children[l4].metrics[i] = val;
+                                // For Acc% and Com%, these come as ratios from Tableau – accumulate raw LOC values instead
+                                tree[l2].children[l3].children[l4].metrics[i] += val;
                             });
                         }
                     }
@@ -347,21 +309,27 @@
         }
 
         function aggregateMetrics(nodes) {
+            const accPctIdx = METRICS.indexOf('Acc %');
+            const comPctIdx = METRICS.indexOf('Com %');
+            const locAccIdx = METRICS.indexOf('LOC Acc');
+            const locGenIdx = METRICS.indexOf('LOC Gen');
+
             Object.values(nodes).forEach(node => {
                 if (node.children) {
                     aggregateMetrics(node.children);
                     node.metrics = Array(METRICS.length).fill(0);
                     Object.values(node.children).forEach(child => {
-                        child.metrics.forEach((val, i) => node.metrics[i] += val);
+                        child.metrics.forEach((val, i) => {
+                            // Skip percentage fields during summation; we recompute them
+                            if (i === accPctIdx || i === comPctIdx) return;
+                            node.metrics[i] += val;
+                        });
                     });
-                    
-                    let childCount = Object.keys(node.children).length;
-                    if (childCount > 0) {
-                        const accPctIdx = METRICS.indexOf('Acc %');
-                        const comPctIdx = METRICS.indexOf('Com %');
-                        if (accPctIdx > -1) node.metrics[accPctIdx] = node.metrics[accPctIdx] / childCount;
-                        if (comPctIdx > -1) node.metrics[comPctIdx] = node.metrics[comPctIdx] / childCount;
-                    }
+                }
+                // Recompute Acc % = LOC Accepted / LOC Generated
+                if (accPctIdx > -1 && locGenIdx > -1 && locAccIdx > -1) {
+                    const gen = node.metrics[locGenIdx];
+                    node.metrics[accPctIdx] = gen > 0 ? node.metrics[locAccIdx] / gen : 0;
                 }
             });
         }
@@ -408,11 +376,6 @@
             const wrapper = document.createElement('div');
             wrapper.className = 'tree-node-container';
 
-            // Add level-specific class for card styling
-            if (node.level === 'L2 (VP)') wrapper.classList.add('level-l2');
-            else if (node.level === 'L3 (Manager)') wrapper.classList.add('level-l3');
-            else if (node.level === 'L4 (IC)') wrapper.classList.add('level-l4');
-
             const hasChildren = node.children && Object.keys(node.children).length > 0;
 
             const row = document.createElement('div');
@@ -421,13 +384,13 @@
             const grid = document.createElement('div');
             grid.className = 'grid-row';
 
-            // Name cell: chevron + name
+            // Name cell: chevron + name + level badge
             const nameCell = document.createElement('div');
             nameCell.className = 'name-cell';
 
-            const chevron = document.createElement('span');
-            chevron.className = 'chevron';
-            chevron.innerText = hasChildren ? '›' : '›';
+            const chevron = document.createElement('div');
+            chevron.className = 'chevron-box';
+            chevron.innerText = '▶';
             if (!hasChildren) chevron.classList.add('empty');
 
             const nameEl = document.createElement('span');
@@ -435,8 +398,13 @@
             nameEl.innerText = node.name;
             nameEl.title = node.name;
 
+            const levelEl = document.createElement('span');
+            levelEl.className = 'node-level';
+            levelEl.innerText = node.level;
+
             nameCell.appendChild(chevron);
             nameCell.appendChild(nameEl);
+            nameCell.appendChild(levelEl);
             grid.appendChild(nameCell);
 
             // Metric cells
@@ -444,8 +412,31 @@
                 const val = node.metrics[col.idx] || 0;
                 const cell = document.createElement('div');
                 cell.className = 'metric-cell';
-                cell.title = formatFull(val);   // full value on hover
 
+                // --- License column: show "WS / GM" ---
+                if (col.fmt === 'license') {
+                    const wsVal = node.metrics[col.idx] || 0;
+                    const gmVal = node.metrics[col.idx2] || 0;
+                    cell.title = `Windsurf: ${formatFull(wsVal)}, Gemini: ${formatFull(gmVal)}`;
+                    cell.innerHTML =
+                        `<span style="color:#0ea5e9">${formatFull(wsVal)}</span>` +
+                        `<span style="opacity:0.4"> / </span>` +
+                        `<span style="color:#8b5cf6">${formatFull(gmVal)}</span>`;
+                    grid.appendChild(cell);
+                    return;
+                }
+
+                // --- Percentage column ---
+                if (col.fmt === 'pct') {
+                    const pctVal = (val * 100).toFixed(1) + '%';
+                    cell.title = pctVal;
+                    cell.innerText = pctVal;
+                    grid.appendChild(cell);
+                    return;
+                }
+
+                // --- Standard columns with optional arrows ---
+                cell.title = formatFull(val);
                 const avg = sibAvgMap && sibAvgMap[col.idx];
                 if (col.showArrow && avg != null && avg > 0) {
                     const isUp = val >= avg;
@@ -476,9 +467,8 @@
                 wrapper.appendChild(childContainer);
 
                 row.onclick = () => {
-                    const isExpanded = childContainer.classList.toggle('expanded');
+                    childContainer.classList.toggle('expanded');
                     chevron.classList.toggle('expanded');
-                    chevron.innerText = isExpanded ? '∨' : '›';
                 };
             }
 
