@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +13,7 @@
             --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             --font-size: 13px;
         }
+
         body {
             font-family: var(--font-family);
             background-color: var(--bg-color);
@@ -22,30 +24,84 @@
             box-sizing: border-box;
             user-select: none;
         }
+
         /* Configuration UI */
-        #config-ui { 
-            display: none; padding: 10px; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
-            height: 100vh; overflow-y: auto; box-sizing: border-box; color: #333; font-family: sans-serif;
+        #config-ui {
+            display: none;
+            padding: 10px;
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            height: 100vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            color: #333;
+            font-family: sans-serif;
         }
-        .config-section { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
-        label { font-weight: bold; display: block; margin-top: 10px; font-size: 12px; }
-        select, input[type="text"], input[type="number"], input[type="color"] { 
-            width: 100%; padding: 6px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; 
+
+        .config-section {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
         }
-        input[type="color"] { height: 35px; padding: 2px; }
-        button { 
-            margin-top: 10px; background: #0055A4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 10px;
+            font-size: 12px;
         }
-        button:hover { background: #003d7a; }
+
+        select,
+        input[type="text"],
+        input[type="number"],
+        input[type="color"] {
+            width: 100%;
+            padding: 6px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        input[type="color"] {
+            height: 35px;
+            padding: 2px;
+        }
+
+        button {
+            margin-top: 10px;
+            background: #0055A4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+
+        button:hover {
+            background: #003d7a;
+        }
 
         /* Main UI */
-        #main-ui { display: flex; flex-direction: column; position: relative; }
-        #loading { font-style: italic; opacity: 0.7; margin-bottom: 6px; }
+        #main-ui {
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
 
-        /* Grid columns: name | WS Credits | LOC Gen | LOC Acc | LOC Acc % | LOC Com | Active | Licenses */
+        #loading {
+            font-style: italic;
+            opacity: 0.7;
+            margin-bottom: 6px;
+        }
+
+        /* Grid columns */
         .grid-row {
             display: grid;
-            grid-template-columns: 1fr 80px 72px 72px 72px 72px 80px 110px;
+            grid-template-columns: 1fr 90px 80px 80px 80px 80px 90px 120px;
             align-items: center;
             padding: 4px 8px;
             gap: 4px;
@@ -57,7 +113,7 @@
             top: 0;
             z-index: 10;
             background: var(--bg-color);
-            border-bottom: 2px solid rgba(128,128,128,0.25);
+            border-bottom: 2px solid rgba(128, 128, 128, 0.25);
             margin-bottom: 4px;
             font-size: 11px;
             font-weight: 700;
@@ -65,10 +121,24 @@
             text-transform: uppercase;
             letter-spacing: 0.03em;
         }
-        #col-header .metric-cell { text-align: right; }
+
+        #col-header .metric-cell {
+            text-align: right;
+        }
+
+        /* Hierarchy card wrapping for L2 nodes */
+        .hierarchy-card {
+            background: transparent;
+            border: 1px solid rgba(128, 128, 128, 0.25);
+            border-radius: 8px;
+            padding: 6px 4px;
+            margin-bottom: 10px;
+        }
 
         /* Tree rows */
-        .tree-node-container { margin-bottom: 2px; }
+        .tree-node-container {
+            margin-bottom: 2px;
+        }
 
         .tree-row {
             border-radius: 5px;
@@ -76,7 +146,11 @@
             transition: background 0.15s;
             border: 1px solid transparent;
         }
-        .tree-row:hover { background: rgba(128,128,128,0.08); border-color: rgba(128,128,128,0.12); }
+
+        .tree-row:hover {
+            background: rgba(128, 128, 128, 0.08);
+            border-color: rgba(128, 128, 128, 0.12);
+        }
 
         .name-cell {
             display: flex;
@@ -84,18 +158,35 @@
             gap: 5px;
             min-width: 0;
         }
+
         .chevron-box {
             flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            width: 18px; height: 18px; border-radius: 3px;
-            background: rgba(128,128,128,0.1);
-            font-size: 9px; transition: transform 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+            background: rgba(128, 128, 128, 0.1);
+            font-size: 9px;
+            transition: transform 0.15s;
         }
-        .chevron-box.expanded { transform: rotate(90deg); }
-        .chevron-box.empty { visibility: hidden; }
 
-        .node-name { font-weight: 600; font-size: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .node-level { font-size: 0.78em; opacity: 0.5; margin-left: 2px; flex-shrink: 0; }
+        .chevron-box.expanded {
+            transform: rotate(90deg);
+        }
+
+        .chevron-box.empty {
+            visibility: hidden;
+        }
+
+        .node-name {
+            font-weight: 600;
+            font-size: 1em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
 
         .metric-cell {
             text-align: right;
@@ -105,15 +196,31 @@
             white-space: nowrap;
         }
 
+        .arrow-up {
+            color: #22c55e;
+            font-size: 10px;
+            margin-left: 2px;
+        }
+
+        .arrow-down {
+            color: #ef4444;
+            font-size: 10px;
+            margin-left: 2px;
+        }
+
         .children-container {
             display: none;
             padding-left: 18px;
-            border-left: 1px dashed rgba(128,128,128,0.2);
+            border-left: 1px dashed rgba(128, 128, 128, 0.2);
             margin-left: 12px;
         }
-        .children-container.expanded { display: block; }
+
+        .children-container.expanded {
+            display: block;
+        }
     </style>
 </head>
+
 <body>
     <div id="config-ui">
         <h3>Visualization Settings</h3>
@@ -126,13 +233,13 @@
                 <option value="Tahoma, Geneva, sans-serif">Tahoma</option>
                 <option value="'Times New Roman', Times, serif">Times New Roman</option>
             </select>
-            
+
             <label>Base Font Size (e.g. 12px, 14px):</label>
             <input type="text" id="cfg-size" value="13px" />
-            
+
             <label>Background Color:</label>
             <input type="color" id="cfg-bg" value="#ffffff" />
-            
+
             <label>Text Color:</label>
             <input type="color" id="cfg-text" value="#333333" />
         </div>
@@ -150,22 +257,25 @@
             'LOC Com', 'Com %', 'Active', 'WS Lic', 'GM Lic'
         ];
 
-        // Columns to display (order = left to right after the name column)
-        // showArrow: true → compare against siblings and show ▲/▼
-        // fmt: optional format type – 'pct' for percentage, 'license' for WS/GM combined
+        // All columns have showArrow: true for period-over-period comparison
         const COL_DEFS = [
-            { label: 'WS Credits',   idx: 0, useK: false, showArrow: true  },
-            { label: 'LOC Gen',      idx: 1, useK: true,  showArrow: true  },
-            { label: 'LOC Acc',      idx: 2, useK: true,  showArrow: true  },
-            { label: 'Acc %',        idx: 3, useK: false, showArrow: false, fmt: 'pct' },
-            { label: 'LOC Com',      idx: 4, useK: true,  showArrow: true  },
-            { label: 'Active Users', idx: 6, useK: false, showArrow: false },
-            { label: 'WS / GM Lic',  idx: 7, useK: false, showArrow: false, fmt: 'license', idx2: 8 },
+            { label: 'WS Credits', idx: 0, useK: false, showArrow: true },
+            { label: 'LOC Gen', idx: 1, useK: true, showArrow: true },
+            { label: 'LOC Acc', idx: 2, useK: true, showArrow: true },
+            { label: 'Acc %', idx: 3, useK: false, showArrow: true, fmt: 'pct' },
+            { label: 'LOC Com', idx: 4, useK: true, showArrow: true },
+            { label: 'Active Users', idx: 6, useK: false, showArrow: true },
+            { label: 'WS / GM Lic', idx: 7, useK: false, showArrow: true, fmt: 'license', idx2: 8 },
         ];
+
+        // Flag to prevent re-entry during previous-period fetch
+        let isFetchingComparison = false;
+        // Flattened previous-period metrics keyed by node name
+        let prevPeriodMap = {};
 
         function formatK(val) {
             if (val >= 1000000) return (val / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-            if (val >= 1000)    return (val / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            if (val >= 1000) return (val / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
             return Math.round(val).toString();
         }
 
@@ -183,7 +293,7 @@
             document.documentElement.style.setProperty('--font-size', size);
             document.documentElement.style.setProperty('--bg-color', bg);
             document.documentElement.style.setProperty('--text-color', text);
-            
+
             document.getElementById('cfg-font').value = font;
             document.getElementById('cfg-size').value = size;
             document.getElementById('cfg-bg').value = bg;
@@ -196,24 +306,25 @@
                 showConfig();
                 return;
             }
-            
+
             applyStyles();
-            
+
             const dashboard = tableau.extensions.dashboardContent.dashboard;
             const sheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table');
-            
+
             if (sheet) {
                 // Listen for filter changes!
                 sheet.addEventListener(tableau.TableauEventType.FilterChanged, (e) => {
-                    fetchDataAndRender();
+                    if (!isFetchingComparison) fetchDataAndRender();
                 });
             }
 
             // Re-render when any parameter changes (e.g. Start Date, Period, N Weeks)
+            // Skip re-render if we're in the middle of fetching comparison data
             dashboard.getParametersAsync().then(params => {
                 params.forEach(param => {
                     param.addEventListener(tableau.TableauEventType.ParameterChanged, () => {
-                        fetchDataAndRender();
+                        if (!isFetchingComparison) fetchDataAndRender();
                     });
                 });
             });
@@ -234,7 +345,7 @@
             tableau.extensions.settings.set('size', document.getElementById('cfg-size').value);
             tableau.extensions.settings.set('bg', document.getElementById('cfg-bg').value);
             tableau.extensions.settings.set('text', document.getElementById('cfg-text').value);
-            
+
             tableau.extensions.settings.saveAsync().then(() => {
                 document.getElementById('config-ui').style.display = 'none';
                 document.getElementById('main-ui').style.display = 'flex';
@@ -242,70 +353,53 @@
             });
         }
 
-        async function fetchDataAndRender() {
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('loading').innerText = 'Loading data...';
-            
-            const dashboard = tableau.extensions.dashboardContent.dashboard;
-            const sheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table');
-            
-            if (!sheet) {
-                document.getElementById('loading').innerText = 'Worksheet "L_Hierarchy_Table" not found.';
-                return;
+        /* ----------------------------------------------------------------
+         * Build a hierarchy tree from a Tableau data table
+         * Reusable for both current and previous period fetches
+         * ---------------------------------------------------------------- */
+        function buildTreeFromData(dataTable) {
+            const cols = dataTable.columns;
+            const l2Idx = cols.findIndex(c => c.fieldName === 'L2 (VP)');
+            const l3Idx = cols.findIndex(c => c.fieldName === 'L3 (Manager)');
+            const l4Idx = cols.findIndex(c => c.fieldName === 'L4 (IC)');
+            const metricIdxs = METRICS.map(m =>
+                cols.findIndex(c => c.fieldName.includes(m) || c.fieldName === m)
+            );
+
+            if (l2Idx === -1 || l3Idx === -1 || l4Idx === -1) {
+                throw new Error("Hierarchy columns (L2, L3, L4) not found.");
             }
 
-            try {
-                const dataTable = await sheet.getSummaryDataAsync({ maxRows: 0 });
-                const cols = dataTable.columns;
-                
-                const l2Idx = cols.findIndex(c => c.fieldName === 'L2 (VP)');
-                const l3Idx = cols.findIndex(c => c.fieldName === 'L3 (Manager)');
-                const l4Idx = cols.findIndex(c => c.fieldName === 'L4 (IC)');
-                
-                const metricIdxs = METRICS.map(m => cols.findIndex(c => c.fieldName.includes(m) || c.fieldName === m));
+            let tree = {};
 
-                if (l2Idx === -1 || l3Idx === -1 || l4Idx === -1) {
-                    throw new Error("Hierarchy columns (L2, L3, L4) not found.");
-                }
+            dataTable.data.forEach(row => {
+                const l2 = row[l2Idx].value;
+                const l3 = row[l3Idx].value;
+                const l4 = row[l4Idx].value;
 
-                let tree = {};
-                
-                dataTable.data.forEach(row => {
-                    const l2 = row[l2Idx].value;
-                    const l3 = row[l3Idx].value;
-                    const l4 = row[l4Idx].value;
-                    
-                    if (!l2 || l2 === '%all%' || l2 === 'Null') return;
+                if (!l2 || l2 === '%all%' || l2 === 'Null') return;
 
-                    if (!tree[l2]) tree[l2] = { name: l2, level: 'L2 (VP)', children: {}, metrics: Array(METRICS.length).fill(0) };
-                    
-                    if (l3 && l3 !== '%all%' && l3 !== 'Null') {
-                        if (!tree[l2].children[l3]) {
-                            tree[l2].children[l3] = { name: l3, level: 'L3 (Manager)', children: {}, metrics: Array(METRICS.length).fill(0) };
-                        }
-                        
-                        if (l4 && l4 !== '%all%' && l4 !== 'Null') {
-                            if (!tree[l2].children[l3].children[l4]) {
-                                tree[l2].children[l3].children[l4] = { name: l4, level: 'L4 (IC)', metrics: Array(METRICS.length).fill(0) };
-                            }
-                            METRICS.forEach((m, i) => {
-                                let val = parseFloat(row[metricIdxs[i]]?.value || 0);
-                                if (isNaN(val)) val = 0;
-                                // For Acc% and Com%, these come as ratios from Tableau – accumulate raw LOC values instead
-                                tree[l2].children[l3].children[l4].metrics[i] += val;
-                            });
-                        }
+                if (!tree[l2]) tree[l2] = { name: l2, level: 'L2', children: {}, metrics: Array(METRICS.length).fill(0) };
+
+                if (l3 && l3 !== '%all%' && l3 !== 'Null') {
+                    if (!tree[l2].children[l3]) {
+                        tree[l2].children[l3] = { name: l3, level: 'L3', children: {}, metrics: Array(METRICS.length).fill(0) };
                     }
-                });
 
-                aggregateMetrics(tree);
-                renderTreeUI(tree);
-                
-                document.getElementById('loading').style.display = 'none';
-            } catch (err) {
-                document.getElementById('loading').innerText = 'Error: ' + err.message;
-                console.error(err);
-            }
+                    if (l4 && l4 !== '%all%' && l4 !== 'Null') {
+                        if (!tree[l2].children[l3].children[l4]) {
+                            tree[l2].children[l3].children[l4] = { name: l4, level: 'L4', metrics: Array(METRICS.length).fill(0) };
+                        }
+                        METRICS.forEach((m, i) => {
+                            let val = parseFloat(row[metricIdxs[i]]?.value || 0);
+                            if (isNaN(val)) val = 0;
+                            tree[l2].children[l3].children[l4].metrics[i] += val;
+                        });
+                    }
+                }
+            });
+
+            return tree;
         }
 
         function aggregateMetrics(nodes) {
@@ -334,6 +428,121 @@
             });
         }
 
+        /* ----------------------------------------------------------------
+         * Flatten a tree into a lookup map: { nodeName: metrics[] }
+         * Used to look up previous-period values by leader name
+         * ---------------------------------------------------------------- */
+        function flattenTree(nodes, map) {
+            Object.values(nodes).forEach(node => {
+                map[node.name] = [...node.metrics];
+                if (node.children) flattenTree(node.children, map);
+            });
+        }
+
+        /* ----------------------------------------------------------------
+         * Fetch previous-period data by temporarily shifting P_Start_Date
+         * ---------------------------------------------------------------- */
+        async function fetchPreviousPeriodData(dashboard, sheet) {
+            const params = await dashboard.getParametersAsync();
+            const startDateParam = params.find(p => p.name === 'P_Start_Date');
+            const nWeeksParam = params.find(p => p.name === 'P_Next_N_Weeks');
+
+            if (!startDateParam || !nWeeksParam) {
+                console.warn('Parameters P_Start_Date or P_Next_N_Weeks not found. Skipping comparison.');
+                return {};
+            }
+
+            const nWeeks = parseInt(nWeeksParam.currentValue.value) || 5;
+
+            // Parse the current start date
+            const rawDate = startDateParam.currentValue.value;
+            const originalDate = new Date(rawDate);
+            if (isNaN(originalDate.getTime())) {
+                console.warn('Could not parse P_Start_Date value:', rawDate);
+                return {};
+            }
+
+            // Calculate previous period start: go back N weeks before the current start
+            const prevStartDate = new Date(originalDate);
+            prevStartDate.setDate(prevStartDate.getDate() - (nWeeks * 7));
+
+            isFetchingComparison = true;
+            try {
+                // Shift to previous period
+                await startDateParam.changeValueAsync(prevStartDate);
+                // Wait for Tableau to recalculate the worksheet
+                await new Promise(r => setTimeout(r, 1200));
+
+                // Fetch previous period data
+                const prevDataTable = await sheet.getSummaryDataAsync({ maxRows: 0 });
+                const prevTree = buildTreeFromData(prevDataTable);
+                aggregateMetrics(prevTree);
+
+                // Flatten into a lookup map
+                const map = {};
+                flattenTree(prevTree, map);
+
+                // Restore original date
+                await startDateParam.changeValueAsync(originalDate);
+                // Wait for restore to complete
+                await new Promise(r => setTimeout(r, 800));
+
+                return map;
+            } catch (err) {
+                console.error('Error fetching previous period data:', err);
+                // Attempt to restore original date
+                try { await startDateParam.changeValueAsync(originalDate); } catch (e) { }
+                return {};
+            } finally {
+                isFetchingComparison = false;
+            }
+        }
+
+        /* ----------------------------------------------------------------
+         * Main fetch: get current data, then previous period, then render
+         * ---------------------------------------------------------------- */
+        async function fetchDataAndRender() {
+            if (isFetchingComparison) return;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').innerText = 'Loading data...';
+
+            const dashboard = tableau.extensions.dashboardContent.dashboard;
+            const sheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table');
+
+            if (!sheet) {
+                document.getElementById('loading').innerText = 'Worksheet "L_Hierarchy_Table" not found.';
+                return;
+            }
+
+            try {
+                // 1. Fetch current period data
+                const dataTable = await sheet.getSummaryDataAsync({ maxRows: 0 });
+                const tree = buildTreeFromData(dataTable);
+                aggregateMetrics(tree);
+
+                // 2. Fetch previous period data for comparison
+                document.getElementById('loading').innerText = 'Loading comparison data...';
+                try {
+                    prevPeriodMap = await fetchPreviousPeriodData(dashboard, sheet);
+                } catch (e) {
+                    console.warn('Could not fetch previous period data:', e);
+                    prevPeriodMap = {};
+                }
+
+                // 3. Render the tree with comparison arrows
+                renderTreeUI(tree);
+
+                document.getElementById('loading').style.display = 'none';
+            } catch (err) {
+                document.getElementById('loading').innerText = 'Error: ' + err.message;
+                console.error(err);
+            }
+        }
+
+        /* ----------------------------------------------------------------
+         * Rendering
+         * ---------------------------------------------------------------- */
         function renderTreeUI(tree) {
             const container = document.getElementById('tree-container');
             container.innerHTML = '';
@@ -355,24 +564,17 @@
             header.appendChild(headerGrid);
             container.appendChild(header);
 
+            // Render L2 nodes wrapped in hierarchy cards
             const rootNodes = Object.values(tree);
-            const rootAvgMap = siblingAvg(rootNodes);
             rootNodes.sort((a, b) => a.name.localeCompare(b.name)).forEach(node => {
-                container.appendChild(createNodeElement(node, rootAvgMap));
+                const card = document.createElement('div');
+                card.className = 'hierarchy-card';
+                card.appendChild(createNodeElement(node));
+                container.appendChild(card);
             });
         }
 
-        // Returns { metricIdx: avgValue } for every arrow-enabled column
-        function siblingAvg(nodes) {
-            const result = {};
-            if (!nodes || nodes.length === 0) return result;
-            COL_DEFS.filter(c => c.showArrow).forEach(col => {
-                result[col.idx] = nodes.reduce((sum, n) => sum + (n.metrics[col.idx] || 0), 0) / nodes.length;
-            });
-            return result;
-        }
-
-        function createNodeElement(node, sibAvgMap) {
+        function createNodeElement(node) {
             const wrapper = document.createElement('div');
             wrapper.className = 'tree-node-container';
 
@@ -384,7 +586,7 @@
             const grid = document.createElement('div');
             grid.className = 'grid-row';
 
-            // Name cell: chevron + name + level badge
+            // Name cell: chevron + name (no level label)
             const nameCell = document.createElement('div');
             nameCell.className = 'name-cell';
 
@@ -398,14 +600,13 @@
             nameEl.innerText = node.name;
             nameEl.title = node.name;
 
-            const levelEl = document.createElement('span');
-            levelEl.className = 'node-level';
-            levelEl.innerText = node.level;
-
             nameCell.appendChild(chevron);
             nameCell.appendChild(nameEl);
-            nameCell.appendChild(levelEl);
+            // Level label removed per requirement
             grid.appendChild(nameCell);
+
+            // Previous period metrics for this node (by name)
+            const prevMetrics = prevPeriodMap[node.name] || null;
 
             // Metric cells
             COL_DEFS.forEach(col => {
@@ -417,8 +618,22 @@
                 if (col.fmt === 'license') {
                     const wsVal = node.metrics[col.idx] || 0;
                     const gmVal = node.metrics[col.idx2] || 0;
-                    cell.title = `Windsurf: ${formatFull(wsVal)}, Gemini: ${formatFull(gmVal)}`;
-                    cell.innerText = `${formatFull(wsVal)} / ${formatFull(gmVal)}`;
+                    const totalCurrent = wsVal + gmVal;
+                    const formatted = `${formatFull(wsVal)} / ${formatFull(gmVal)}`;
+
+                    if (col.showArrow && prevMetrics) {
+                        const prevWs = prevMetrics[col.idx] || 0;
+                        const prevGm = prevMetrics[col.idx2] || 0;
+                        const totalPrev = prevWs + prevGm;
+                        const arrowHtml = buildArrowHtml(totalCurrent, totalPrev);
+                        const pctChange = totalPrev > 0 ? ((totalCurrent - totalPrev) / totalPrev * 100) : 0;
+                        const pctStr = (pctChange >= 0 ? '+' : '') + pctChange.toFixed(1) + '%';
+                        cell.title = `Current: WS ${formatFull(wsVal)} / GM ${formatFull(gmVal)}\nPrevious: WS ${formatFull(prevWs)} / GM ${formatFull(prevGm)}\nChange: ${pctStr}`;
+                        cell.innerHTML = formatted + arrowHtml;
+                    } else {
+                        cell.title = `Windsurf: ${formatFull(wsVal)}, Gemini: ${formatFull(gmVal)}`;
+                        cell.innerText = formatted;
+                    }
                     grid.appendChild(cell);
                     return;
                 }
@@ -426,25 +641,35 @@
                 // --- Percentage column ---
                 if (col.fmt === 'pct') {
                     const pctVal = (val * 100).toFixed(1) + '%';
-                    cell.title = pctVal;
-                    cell.innerText = pctVal;
+
+                    if (col.showArrow && prevMetrics) {
+                        const prevVal = prevMetrics[col.idx] || 0;
+                        const arrowHtml = buildArrowHtml(val, prevVal);
+                        const diff = ((val - prevVal) * 100).toFixed(1);
+                        const diffStr = (diff >= 0 ? '+' : '') + diff + ' pp';
+                        cell.title = `Current: ${pctVal}\nPrevious: ${(prevVal * 100).toFixed(1)}%\nChange: ${diffStr}`;
+                        cell.innerHTML = pctVal + arrowHtml;
+                    } else {
+                        cell.title = pctVal;
+                        cell.innerText = pctVal;
+                    }
                     grid.appendChild(cell);
                     return;
                 }
 
-                // --- Standard columns with optional arrows ---
-                cell.title = formatFull(val);
-                const avg = sibAvgMap && sibAvgMap[col.idx];
-                if (col.showArrow && avg != null && avg > 0) {
-                    const isUp = val >= avg;
-                    const pct = ((val - avg) / avg * 100);
-                    const pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
-                    cell.title = `${formatFull(val)} (${pctStr} vs group avg)`;
-                    const formatted = col.useK ? formatK(val) : formatFull(val);
-                    cell.innerHTML =
-                        `${formatted}&nbsp;<span style="color:${isUp ? '#22c55e' : '#ef4444'};font-size:11px;">${isUp ? '▲' : '▼'}</span>`;
+                // --- Standard columns with period-over-period arrows ---
+                const formatted = col.useK ? formatK(val) : formatFull(val);
+
+                if (col.showArrow && prevMetrics) {
+                    const prevVal = prevMetrics[col.idx] || 0;
+                    const arrowHtml = buildArrowHtml(val, prevVal);
+                    const pctChange = prevVal > 0 ? ((val - prevVal) / prevVal * 100) : (val > 0 ? 100 : 0);
+                    const pctStr = (pctChange >= 0 ? '+' : '') + pctChange.toFixed(1) + '%';
+                    cell.title = `Current: ${formatFull(val)}\nPrevious: ${formatFull(prevVal)}\nChange: ${pctStr}`;
+                    cell.innerHTML = formatted + arrowHtml;
                 } else {
-                    cell.innerText = col.useK ? formatK(val) : formatFull(val);
+                    cell.title = formatFull(val);
+                    cell.innerText = formatted;
                 }
                 grid.appendChild(cell);
             });
@@ -457,9 +682,8 @@
                 const childContainer = document.createElement('div');
                 childContainer.className = 'children-container';
                 const childNodes = Object.values(node.children);
-                const childAvgMap = siblingAvg(childNodes);
                 childNodes.sort((a, b) => a.name.localeCompare(b.name)).forEach(child => {
-                    childContainer.appendChild(createNodeElement(child, childAvgMap));
+                    childContainer.appendChild(createNodeElement(child));
                 });
                 wrapper.appendChild(childContainer);
 
@@ -471,6 +695,14 @@
 
             return wrapper;
         }
+
+        /* Build the arrow HTML span: green ▲ if current >= prev, red ▼ otherwise */
+        function buildArrowHtml(current, previous) {
+            if (previous === 0 && current === 0) return '';
+            const isUp = current >= previous;
+            return `&nbsp;<span class="${isUp ? 'arrow-up' : 'arrow-down'}">${isUp ? '▲' : '▼'}</span>`;
+        }
     </script>
 </body>
+
 </html>
