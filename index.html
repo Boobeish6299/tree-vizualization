@@ -126,30 +126,21 @@
             text-align: right;
         }
 
-        /* Hierarchy card wrapping for L2 nodes */
-        .hierarchy-card {
-            background: transparent;
-            border: 1px solid rgba(128, 128, 128, 0.25);
-            border-radius: 8px;
-            padding: 6px 4px;
-            margin-bottom: 10px;
-        }
-
         /* Tree rows */
         .tree-node-container {
-            margin-bottom: 2px;
+            margin-bottom: 4px;
         }
 
         .tree-row {
-            border-radius: 5px;
+            background: transparent;
+            border: 1px solid rgba(128, 128, 128, 0.25);
+            border-radius: 8px;
             cursor: pointer;
             transition: background 0.15s;
-            border: 1px solid transparent;
         }
 
         .tree-row:hover {
-            background: rgba(128, 128, 128, 0.08);
-            border-color: rgba(128, 128, 128, 0.12);
+            background: rgba(128, 128, 128, 0.06);
         }
 
         .name-cell {
@@ -564,13 +555,10 @@
             header.appendChild(headerGrid);
             container.appendChild(header);
 
-            // Render L2 nodes wrapped in hierarchy cards
+            // Render L2 nodes directly (card styling is on .tree-row for all levels)
             const rootNodes = Object.values(tree);
             rootNodes.sort((a, b) => a.name.localeCompare(b.name)).forEach(node => {
-                const card = document.createElement('div');
-                card.className = 'hierarchy-card';
-                card.appendChild(createNodeElement(node));
-                container.appendChild(card);
+                container.appendChild(createNodeElement(node));
             });
         }
 
