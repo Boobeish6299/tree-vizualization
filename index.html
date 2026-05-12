@@ -124,6 +124,8 @@
 
         #col-header .metric-cell {
             text-align: right;
+            white-space: normal;
+            line-height: 1.3;
         }
 
         /* Tree nodes — card wraps the entire group (node + children) */
@@ -174,7 +176,7 @@
         }
 
         .node-name {
-            font-weight: 600;
+            font-weight: normal;
             font-size: 1em;
             white-space: nowrap;
             overflow: hidden;
@@ -186,6 +188,13 @@
             font-size: 12px;
             font-variant-numeric: tabular-nums;
             cursor: default;
+            white-space: nowrap;
+            line-height: 1.3;
+        }
+
+        .metric-change {
+            font-size: 9px;
+            opacity: 0.7;
             white-space: nowrap;
         }
 
@@ -584,11 +593,10 @@
                         const prevWs = prevMetrics[col.idx] || 0;
                         const prevGm = prevMetrics[col.idx2] || 0;
                         const totalPrev = prevWs + prevGm;
-                        const arrowHtml = buildArrowHtml(totalCurrent, totalPrev);
                         const pctChange = totalPrev > 0 ? ((totalCurrent - totalPrev) / totalPrev * 100) : 0;
                         const pctStr = (pctChange >= 0 ? '+' : '') + pctChange.toFixed(1) + '%';
                         cell.title = `Current: WS ${formatFull(wsVal)} / GM ${formatFull(gmVal)}\nPrevious: WS ${formatFull(prevWs)} / GM ${formatFull(prevGm)}\nChange: ${pctStr}`;
-                        cell.innerHTML = formatted + arrowHtml;
+                        cell.innerHTML = formatted + buildChangeLine(totalCurrent, totalPrev, pctStr);
                     } else {
                         cell.title = `Windsurf: ${formatFull(wsVal)}, Gemini: ${formatFull(gmVal)}`;
                         cell.innerText = formatted;
@@ -603,11 +611,10 @@
 
                     if (col.showArrow && prevMetrics) {
                         const prevVal = prevMetrics[col.idx] || 0;
-                        const arrowHtml = buildArrowHtml(val, prevVal);
                         const diff = ((val - prevVal) * 100).toFixed(1);
-                        const diffStr = (diff >= 0 ? '+' : '') + diff + ' pp';
+                        const diffStr = (diff >= 0 ? '+' : '') + diff + 'pp';
                         cell.title = `Current: ${pctVal}\nPrevious: ${(prevVal * 100).toFixed(1)}%\nChange: ${diffStr}`;
-                        cell.innerHTML = pctVal + arrowHtml;
+                        cell.innerHTML = pctVal + buildChangeLine(val, prevVal, diffStr);
                     } else {
                         cell.title = pctVal;
                         cell.innerText = pctVal;
@@ -621,11 +628,10 @@
 
                 if (col.showArrow && prevMetrics) {
                     const prevVal = prevMetrics[col.idx] || 0;
-                    const arrowHtml = buildArrowHtml(val, prevVal);
                     const pctChange = prevVal > 0 ? ((val - prevVal) / prevVal * 100) : (val > 0 ? 100 : 0);
                     const pctStr = (pctChange >= 0 ? '+' : '') + pctChange.toFixed(1) + '%';
                     cell.title = `Current: ${formatFull(val)}\nPrevious: ${formatFull(prevVal)}\nChange: ${pctStr}`;
-                    cell.innerHTML = formatted + arrowHtml;
+                    cell.innerHTML = formatted + buildChangeLine(val, prevVal, pctStr);
                 } else {
                     cell.title = formatFull(val);
                     cell.innerText = formatted;
@@ -659,7 +665,16 @@
         function buildArrowHtml(current, previous) {
             if (previous === 0 && current === 0) return '';
             const isUp = current >= previous;
-            return `&nbsp;<span class="${isUp ? 'arrow-up' : 'arrow-down'}">${isUp ? '▲' : '▼'}</span>`;
+            return `<span class="${isUp ? 'arrow-up' : 'arrow-down'}">${isUp ? '▲' : '▼'}</span>`;
+        }
+
+        /* Build a second line showing arrow + percentage change */
+        function buildChangeLine(current, previous, changeStr) {
+            if (previous === 0 && current === 0) return '';
+            const isUp = current >= previous;
+            const color = isUp ? '#22c55e' : '#ef4444';
+            const arrow = isUp ? '▲' : '▼';
+            return `<div class="metric-change" style="color:${color}">${arrow} ${changeStr}</div>`;
         }
     </script>
 </body>
