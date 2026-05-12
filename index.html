@@ -126,6 +126,7 @@
             text-align: right;
             white-space: normal;
             line-height: 1.3;
+            font-size: 10px;
         }
 
         /* Tree nodes — card wraps the entire group (node + children) */
@@ -674,7 +675,7 @@
             const isUp = current >= previous;
             const color = isUp ? '#22c55e' : '#ef4444';
             const arrow = isUp ? '▲' : '▼';
-            return `<div class="metric-change" style="color:${color}">${arrow} ${changeStr}</div>`;
+            return `<div class="metric-change"><span style="color:${color}">${arrow}</span> ${changeStr}</div>`;
         }
     </script>
 </body>
