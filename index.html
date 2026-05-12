@@ -261,8 +261,6 @@
             { label: 'WS / GM Lic', idx: 7, useK: false, showArrow: true, fmt: 'license', idx2: 8 },
         ];
 
-        // Flag to prevent re-entry during previous-period fetch
-        let isFetchingComparison = false;
         // Flattened previous-period metrics keyed by node name
         let prevPeriodMap = {};
 
@@ -306,18 +304,25 @@
             const sheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table');
 
             if (sheet) {
-                // Listen for filter changes!
-                sheet.addEventListener(tableau.TableauEventType.FilterChanged, (e) => {
-                    if (!isFetchingComparison) fetchDataAndRender();
+                // Listen for filter changes
+                sheet.addEventListener(tableau.TableauEventType.FilterChanged, () => {
+                    fetchDataAndRender();
+                });
+            }
+
+            // Also listen on the previous-period worksheet for filter changes
+            const prevSheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table_Previous');
+            if (prevSheet) {
+                prevSheet.addEventListener(tableau.TableauEventType.FilterChanged, () => {
+                    fetchDataAndRender();
                 });
             }
 
             // Re-render when any parameter changes (e.g. Start Date, Period, N Weeks)
-            // Skip re-render if we're in the middle of fetching comparison data
             dashboard.getParametersAsync().then(params => {
                 params.forEach(param => {
                     param.addEventListener(tableau.TableauEventType.ParameterChanged, () => {
-                        if (!isFetchingComparison) fetchDataAndRender();
+                        fetchDataAndRender();
                     });
                 });
             });
@@ -433,75 +438,16 @@
         }
 
         /* ----------------------------------------------------------------
-         * Fetch previous-period data by temporarily shifting P_Start_Date
-         * ---------------------------------------------------------------- */
-        async function fetchPreviousPeriodData(dashboard, sheet) {
-            const params = await dashboard.getParametersAsync();
-            const startDateParam = params.find(p => p.name === 'P_Start_Date');
-            const nWeeksParam = params.find(p => p.name === 'P_Next_N_Weeks');
-
-            if (!startDateParam || !nWeeksParam) {
-                console.warn('Parameters P_Start_Date or P_Next_N_Weeks not found. Skipping comparison.');
-                return {};
-            }
-
-            const nWeeks = parseInt(nWeeksParam.currentValue.value) || 5;
-
-            // Parse the current start date
-            const rawDate = startDateParam.currentValue.value;
-            const originalDate = new Date(rawDate);
-            if (isNaN(originalDate.getTime())) {
-                console.warn('Could not parse P_Start_Date value:', rawDate);
-                return {};
-            }
-
-            // Calculate previous period start: go back N weeks before the current start
-            const prevStartDate = new Date(originalDate);
-            prevStartDate.setDate(prevStartDate.getDate() - (nWeeks * 7));
-
-            isFetchingComparison = true;
-            try {
-                // Shift to previous period
-                await startDateParam.changeValueAsync(prevStartDate);
-                // Wait for Tableau to recalculate the worksheet
-                await new Promise(r => setTimeout(r, 1200));
-
-                // Fetch previous period data
-                const prevDataTable = await sheet.getSummaryDataAsync({ maxRows: 0 });
-                const prevTree = buildTreeFromData(prevDataTable);
-                aggregateMetrics(prevTree);
-
-                // Flatten into a lookup map
-                const map = {};
-                flattenTree(prevTree, map);
-
-                // Restore original date
-                await startDateParam.changeValueAsync(originalDate);
-                // Wait for restore to complete
-                await new Promise(r => setTimeout(r, 800));
-
-                return map;
-            } catch (err) {
-                console.error('Error fetching previous period data:', err);
-                // Attempt to restore original date
-                try { await startDateParam.changeValueAsync(originalDate); } catch (e) { }
-                return {};
-            } finally {
-                isFetchingComparison = false;
-            }
-        }
-
-        /* ----------------------------------------------------------------
-         * Main fetch: get current data, then previous period, then render
+         * Main fetch: get current + previous period data, then render
+         * Reads from two worksheets in parallel — no parameter shifting
          * ---------------------------------------------------------------- */
         async function fetchDataAndRender() {
-            if (isFetchingComparison) return;
-
             document.getElementById('loading').style.display = 'block';
             document.getElementById('loading').innerText = 'Loading data...';
 
             const dashboard = tableau.extensions.dashboardContent.dashboard;
             const sheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table');
+            const prevSheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table_Previous');
 
             if (!sheet) {
                 document.getElementById('loading').innerText = 'Worksheet "L_Hierarchy_Table" not found.';
@@ -509,17 +455,29 @@
             }
 
             try {
-                // 1. Fetch current period data
-                const dataTable = await sheet.getSummaryDataAsync({ maxRows: 0 });
+                // Fetch current and previous period data in parallel
+                const [dataTable, prevDataTable] = await Promise.all([
+                    sheet.getSummaryDataAsync({ maxRows: 0 }),
+                    prevSheet ? prevSheet.getSummaryDataAsync({ maxRows: 0 }) : Promise.resolve(null)
+                ]);
+
+                // 1. Build current period tree
                 const tree = buildTreeFromData(dataTable);
                 aggregateMetrics(tree);
 
-                // 2. Fetch previous period data for comparison
-                document.getElementById('loading').innerText = 'Loading comparison data...';
-                try {
-                    prevPeriodMap = await fetchPreviousPeriodData(dashboard, sheet);
-                } catch (e) {
-                    console.warn('Could not fetch previous period data:', e);
+                // 2. Build previous period lookup map
+                if (prevDataTable) {
+                    try {
+                        const prevTree = buildTreeFromData(prevDataTable);
+                        aggregateMetrics(prevTree);
+                        prevPeriodMap = {};
+                        flattenTree(prevTree, prevPeriodMap);
+                    } catch (e) {
+                        console.warn('Could not process previous period data:', e);
+                        prevPeriodMap = {};
+                    }
+                } else {
+                    console.warn('Worksheet "L_Hierarchy_Table_Previous" not found. Arrows will not show.');
                     prevPeriodMap = {};
                 }
 
