@@ -446,8 +446,15 @@
             document.getElementById('loading').innerText = 'Loading data...';
 
             const dashboard = tableau.extensions.dashboardContent.dashboard;
+
+            // Debug: log all available worksheet names
+            console.log('[Hierarchy Ext] Available worksheets:', dashboard.worksheets.map(w => w.name));
+
             const sheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table');
             const prevSheet = dashboard.worksheets.find(w => w.name === 'L_Hierarchy_Table_Previous');
+
+            console.log('[Hierarchy Ext] Current sheet found:', !!sheet);
+            console.log('[Hierarchy Ext] Previous sheet found:', !!prevSheet);
 
             if (!sheet) {
                 document.getElementById('loading').innerText = 'Worksheet "L_Hierarchy_Table" not found.';
@@ -461,6 +468,9 @@
                     prevSheet ? prevSheet.getSummaryDataAsync({ maxRows: 0 }) : Promise.resolve(null)
                 ]);
 
+                console.log('[Hierarchy Ext] Current data rows:', dataTable.data.length);
+                console.log('[Hierarchy Ext] Previous data rows:', prevDataTable ? prevDataTable.data.length : 'N/A');
+
                 // 1. Build current period tree
                 const tree = buildTreeFromData(dataTable);
                 aggregateMetrics(tree);
@@ -472,12 +482,13 @@
                         aggregateMetrics(prevTree);
                         prevPeriodMap = {};
                         flattenTree(prevTree, prevPeriodMap);
+                        console.log('[Hierarchy Ext] Previous period leaders:', Object.keys(prevPeriodMap));
                     } catch (e) {
-                        console.warn('Could not process previous period data:', e);
+                        console.warn('[Hierarchy Ext] Could not process previous period data:', e);
                         prevPeriodMap = {};
                     }
                 } else {
-                    console.warn('Worksheet "L_Hierarchy_Table_Previous" not found. Arrows will not show.');
+                    console.warn('[Hierarchy Ext] Worksheet "L_Hierarchy_Table_Previous" not found. Arrows will not show.');
                     prevPeriodMap = {};
                 }
 
