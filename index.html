@@ -2029,6 +2029,10 @@
         // extension, so we react only when it actually changes (not on every
         // unrelated SettingsChanged event we ourselves trigger by saving).
         let lastTeamSelectionStamp = null;
+        // Set to true when the filter extension writes filterApplyActive='1',
+        // cleared when it writes filterApplyActive=''. Used to lift suppress
+        // only for the suppress we ourselves set (not row-click suppresses).
+        let suppressedByFilterApply = false;
         // Cached signature of the last Tableau fetch (date params + tool
         // selection). When a FilterChanged event fires but neither dates nor
         // tools changed (e.g. only a team filter changed on KPI worksheets),
@@ -2104,6 +2108,29 @@
                     const settingsUnreg = tableau.extensions.settings.addEventListener(
                         tableau.TableauEventType.SettingsChanged,
                         () => {
+                            const applyFlag = tableau.extensions.settings.get('filterApplyActive');
+                            if (applyFlag === '1') {
+                                // Filter extension is mid-apply (Phase 1 → Phase 2).
+                                // Suppress our FilterChanged-triggered fetches so we
+                                // don't fire 2-3 separate Snowflake queries per Apply
+                                // click. We'll do one final fetch when the flag clears.
+                                suppressedByFilterApply = true;
+                                suppressNextEventsFor(90000);
+                                return;
+                            }
+                            // Flag cleared → apply is fully done (or unrelated change).
+                            // If WE set the suppress, lift it now so the final fetch proceeds.
+                            if (suppressedByFilterApply) {
+                                suppressedByFilterApply = false;
+                                suppressFetch = false;
+                                if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
+                                forceCollapseOnNextFetch = true;
+                                expandedNodes.clear();
+                                debouncedFetch();
+                                return;
+                            }
+                            // Normal SettingsChanged (no filter-apply suppress active):
+                            // re-render/refetch only when the team selection stamp changed.
                             const stamp = tableau.extensions.settings.get('teamSelectionStamp');
                             if (stamp && stamp !== lastTeamSelectionStamp) {
                                 lastTeamSelectionStamp = stamp;
