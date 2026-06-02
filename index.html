@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/gh/tableau/extensions-api/lib/tableau.extensions.1.latest.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/tableau/extensions-api@1.16.0/lib/tableau.extensions.1.latest.js"></script>
     <style>
         /* ================================================================
            1. CSS Custom Properties (Design Tokens)
@@ -1323,25 +1323,37 @@
         <!-- ══ STEP 1: Data Sources ══════════════════════════════════════ -->
         <div id="wizard-step-1" class="wizard-step">
             <div class="wizard-step-title">🗄️ Connect Your Worksheets</div>
-            <p class="wizard-step-subtitle">This extension uses two Tableau worksheets. Each sheet contains both current and previous period columns side-by-side — no separate previous-period sheets are needed.</p>
+            <p class="wizard-step-subtitle">This extension uses four Tableau worksheets. Select each one below. The Previous Period sheets are optional — leave as None to disable period-over-period comparison.</p>
 
-            <!-- 1×2 Worksheet Card Grid -->
+            <!-- 2×2 Worksheet Card Grid -->
             <div class="ws-card-grid">
                 <div class="ws-card ws-current">
-                    <div class="ws-card-label">Split Worksheet (current + prev columns)</div>
+                    <div class="ws-card-label">Split Worksheet — Current Period</div>
                     <select id="cfg-split-metrics-sheet" class="cfg-select">
                         <option value="">— Select Worksheet —</option>
                     </select>
                     <div id="split-ws-badge"></div>
                     <div id="split-ws-col-preview" class="ws-col-preview"></div>
                 </div>
+                <div class="ws-card ws-previous">
+                    <div class="ws-card-label">Split Worksheet — Previous Period</div>
+                    <select id="cfg-split-metrics-prev-sheet" class="cfg-select">
+                        <option value="">— None —</option>
+                    </select>
+                </div>
                 <div class="ws-card ws-current">
-                    <div class="ws-card-label">Total Worksheet (current + prev columns)</div>
+                    <div class="ws-card-label">Total Worksheet — Current Period</div>
                     <select id="cfg-total-metrics-sheet" class="cfg-select">
                         <option value="">— Select Worksheet —</option>
                     </select>
                     <div id="total-ws-badge"></div>
                     <div id="total-ws-col-preview" class="ws-col-preview"></div>
+                </div>
+                <div class="ws-card ws-previous">
+                    <div class="ws-card-label">Total Worksheet — Previous Period</div>
+                    <select id="cfg-total-metrics-prev-sheet" class="cfg-select">
+                        <option value="">— None —</option>
+                    </select>
                 </div>
             </div>
 
@@ -2263,7 +2275,9 @@
 
             // Load Tool-Aware Metric Source settings
             const splitMetricsSelect = document.getElementById('cfg-split-metrics-sheet');
+            const splitMetricsPrevSelect = document.getElementById('cfg-split-metrics-prev-sheet');
             const totalMetricsSelect = document.getElementById('cfg-total-metrics-sheet');
+            const totalMetricsPrevSelect = document.getElementById('cfg-total-metrics-prev-sheet');
 
             function populateWsSelect(selectEl, emptyLabel, savedValue) {
                 if (!selectEl) return;
@@ -2276,7 +2290,9 @@
             }
 
             populateWsSelect(splitMetricsSelect, '— Select Worksheet —', getSetting('splitMetricsSheet', ''));
+            populateWsSelect(splitMetricsPrevSelect, '— None —', getSetting('splitMetricsPrevSheet', ''));
             populateWsSelect(totalMetricsSelect, '— Select Worksheet —', getSetting('totalMetricsSheet', ''));
+            populateWsSelect(totalMetricsPrevSelect, '— None —', getSetting('totalMetricsPrevSheet', ''));
 
             if (splitMetricsSelect) {
                 splitMetricsSelect.addEventListener('change', () => {
@@ -2691,14 +2707,18 @@
         async function validateToolAwareSettings() {
             const dashboard = tableau.extensions.dashboardContent.dashboard;
             const splitName = document.getElementById('cfg-split-metrics-sheet')?.value;
+            const splitPrevName = document.getElementById('cfg-split-metrics-prev-sheet')?.value;
             const totalName = document.getElementById('cfg-total-metrics-sheet')?.value;
+            const totalPrevName = document.getElementById('cfg-total-metrics-prev-sheet')?.value;
             const errors = [];
 
             if (!splitName && !totalName) return errors; // Tool-Aware not configured — nothing to validate
 
             const sheetsToValidate = [
                 ['Split Metrics', splitName],
+                ['Split Metrics (Previous)', splitPrevName],
                 ['Total Metrics', totalName],
+                ['Total Metrics (Previous)', totalPrevName]
             ];
 
             for (const [role, name] of sheetsToValidate) {
@@ -3426,7 +3446,9 @@
 
             // Tool-Aware Metric Source Settings
             s.set('splitMetricsSheet', document.getElementById('cfg-split-metrics-sheet')?.value || '');
+            s.set('splitMetricsPrevSheet', document.getElementById('cfg-split-metrics-prev-sheet')?.value || '');
             s.set('totalMetricsSheet', document.getElementById('cfg-total-metrics-sheet')?.value || '');
+            s.set('totalMetricsPrevSheet', document.getElementById('cfg-total-metrics-prev-sheet')?.value || '');
             s.set('dynamicColumnsField', document.getElementById('cfg-dynamic-col-field')?.value || 'Dynamic Columns');
 
             // Column Display Settings (order, rename, visibility)
@@ -3512,7 +3534,9 @@
             try {
                 const treeSourceSheets = new Set([
                     getSetting('splitMetricsSheet', 'Split - Metrics'),
+                    getSetting('splitMetricsPrevSheet', 'Split - Metrics - Prev'),
                     getSetting('totalMetricsSheet', 'Total'),
+                    getSetting('totalMetricsPrevSheet', 'Total - Prev'),
                     'Leader Filter'
                 ]);
                 const probe = dashboard.worksheets.find(w => w.name && !treeSourceSheets.has(w.name));
@@ -3537,8 +3561,10 @@
         // via Promise.all so they fire simultaneously instead of sequentially.
         async function computeFetchSignature(dashboard) {
             const treeSourceNames = new Set([
-                getSetting('splitMetricsSheet', 'Split - Metrics'),
-                getSetting('totalMetricsSheet', 'Total'),
+                getSetting('splitMetricsSheet',     'Split - Metrics'),
+                getSetting('splitMetricsPrevSheet', 'Split - Metrics - Prev'),
+                getSetting('totalMetricsSheet',     'Total'),
+                getSetting('totalMetricsPrevSheet', 'Total - Prev'),
                 'Leader Filter'
             ]);
             const probe = dashboard.worksheets.find(w => w.name && !treeSourceNames.has(w.name));
@@ -3625,7 +3651,9 @@
             // legacy single-sheet "Leadership hierarchy" path was removed —
             // the workbook now exposes L2–L9 on Split + Total directly.
             const splitMetricsSheetName = getSetting('splitMetricsSheet', '');
+            const splitMetricsPrevSheetName = getSetting('splitMetricsPrevSheet', '');
             const totalMetricsSheetName = getSetting('totalMetricsSheet', '');
+            const totalMetricsPrevSheetName = getSetting('totalMetricsPrevSheet', '');
 
             if (!splitMetricsSheetName || !totalMetricsSheetName) {
                 if (!isRefresh) {
@@ -3634,8 +3662,19 @@
                 return;
             }
 
-            const splitWs = dashboard.worksheets.find(w => w.name === splitMetricsSheetName);
-            const totalWs = dashboard.worksheets.find(w => w.name === totalMetricsSheetName);
+            const splitWs     = dashboard.worksheets.find(w => w.name === splitMetricsSheetName);
+            const totalWs     = dashboard.worksheets.find(w => w.name === totalMetricsSheetName);
+            // Previous-period source. When the prev sheet is unset OR points at the
+            // same worksheet as the current period, the prev values live as extra
+            // columns on the current sheet ("... - Prev" / "Pervious Period ..."), so
+            // we reuse the already-fetched current table (assigned below) instead of a
+            // separate fetch, and the resolver runs in self-mode (excludes the current
+            // column when matching the prev column). A distinct prev sheet name keeps
+            // the original separate-sheet behavior.
+            const splitPrevSameSheet = !splitMetricsPrevSheetName || splitMetricsPrevSheetName === splitMetricsSheetName;
+            const totalPrevSameSheet = !totalMetricsPrevSheetName || totalMetricsPrevSheetName === totalMetricsSheetName;
+            const splitPrevWs = !splitPrevSameSheet ? dashboard.worksheets.find(w => w.name === splitMetricsPrevSheetName) : null;
+            const totalPrevWs = !totalPrevSameSheet ? dashboard.worksheets.find(w => w.name === totalMetricsPrevSheetName) : null;
             const leaderHierSheetName = getSetting('leaderHierarchySheet', 'Leader Filter');
             const leaderHierWs = leaderHierSheetName ? dashboard.worksheets.find(w => w.name === leaderHierSheetName) : null;
 
@@ -3677,23 +3716,25 @@
                 // ── Raw DataTable fetch with cache ─────────────────────────────
                 // Check if we have a fresh cached DataTable set for this signature.
                 // Cache hits skip the Snowflake round-trip entirely (~50ms vs 5-30s).
-                let splitDataTable, totalDataTable;
+                let splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable;
                 const cachedEntry = lastDataSignature ? rawDataCache.get(lastDataSignature) : null;
                 const cacheIsFresh = cachedEntry && (Date.now() - cachedEntry.timestamp < RAW_CACHE_TTL);
 
                 if (cacheIsFresh) {
-                    ({ splitDataTable, totalDataTable } = cachedEntry.tables);
+                    ({ splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable } = cachedEntry.tables);
                     if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Cached ✓';
                     tFetchStart = tSigDone; // no actual fetch
                     tFetchDone  = tSigDone;
                     console.log('[HierExt] raw-cache-hit: skipping Snowflake fetch for sig:', lastDataSignature);
                 } else {
-                    // Cache miss — fetch from Snowflake via Tableau (2 sheets, both carry current + prev columns)
+                    // Cache miss — fetch from Snowflake via Tableau
                     if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Refreshing…';
                     tFetchStart = performance.now();
-                    [splitDataTable, totalDataTable] = await Promise.all([
+                    [splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable] = await Promise.all([
                         splitWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }),
                         totalWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }),
+                        splitPrevWs ? splitPrevWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }) : Promise.resolve(null),
+                        totalPrevWs ? totalPrevWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }) : Promise.resolve(null),
                     ]);
                     tFetchDone = performance.now();
                     console.log(`[HierExt] ⏳ Snowflake/getSummaryDataAsync: ${((tFetchDone - tFetchStart)/1000).toFixed(2)}s  ← this is where your wait time is`);
@@ -3701,7 +3742,7 @@
                     // Store in cache
                     if (lastDataSignature && splitDataTable) {
                         rawDataCache.set(lastDataSignature, {
-                            tables: { splitDataTable, totalDataTable },
+                            tables: { splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable },
                             timestamp: Date.now()
                         });
                         // Evict oldest entry if over capacity
@@ -3712,6 +3753,12 @@
                         }
                     }
                 }
+
+                // Same-sheet previous period: reuse the already-fetched current
+                // table as the prev source (no extra query). Self-mode resolution
+                // below excludes the current column so it matches the prev column.
+                if (!splitPrevDataTable && splitPrevSameSheet) splitPrevDataTable = splitDataTable;
+                if (!totalPrevDataTable && totalPrevSameSheet) totalPrevDataTable = totalDataTable;
 
                 // Leader Filter is no longer fetched here — Split-Metrics already carries
                 // the filtered hierarchy (the filter extension applies L2-L9 filters to it),
@@ -3733,7 +3780,7 @@
                 if (!fieldNamesLoaded) {
                     fieldNameMap.clear();
                     try {
-                        const wsToScan = [splitWs, totalWs].filter(Boolean);
+                        const wsToScan = [splitWs, totalWs, splitPrevWs, totalPrevWs].filter(Boolean);
                         for (const ws of wsToScan) {
                             const dss = await ws.getDataSourcesAsync();
                             for (const ds of dss) {
@@ -3834,11 +3881,14 @@
                             }
                         }
 
-                        const dynColField = getSetting('dynamicColumnsField', 'Dynamic Columns');
-                        const splitAU     = getSetting('splitActiveUsersCol', 'Active Users - Metric');
-                        const splitCU     = getSetting('splitCreditUsageCol', 'Credit Usage - Metric');
-                        const totalAU     = getSetting('totalActiveUsersCol', 'Total Active User');
-                        const totalCU     = getSetting('totalCreditUsageCol', 'Total Credit Usage');
+                        const dynColField      = getSetting('dynamicColumnsField', 'Dynamic Columns');
+                        // Only Active Users and Credit Usage are shown. LOC Generated /
+                        // LOC Accepted / Accepted Rate are intentionally NOT read, computed,
+                        // or rendered — do not re-add LOC columns to taColDefs below.
+                        const splitAU          = getSetting('splitActiveUsersCol', 'Active Users - Metric');
+                        const splitCU          = getSetting('splitCreditUsageCol', 'Credit Usage');
+                        const totalAU          = getSetting('totalActiveUsersCol', 'Total Active User');
+                        const totalCU          = getSetting('totalCreditUsageCol', 'Total Credit Usage');
 
                         // Detect every tool that exists in the Split sheet's
                         // Dynamic Columns field. Split-Metrics is the source
@@ -3890,27 +3940,13 @@
                             // for the TOOL dropdown), so without this the sum
                             // would include every tool's rows even when only
                             // one is "selected".
-                            // Accepted Rate is computed from Lines Accepted /
-                            // Lines Generated rather than read directly from
-                            // the split sheet's pre-computed percent column.
-                            // Reason: aggregateTree() nullifies non-calculated
-                            // percent metrics at every parent node (averaging/
-                            // summing raw percentages is wrong), which makes
-                            // the rate render as "—" for any row with
-                            // children. Computing it the same way multi-tool
-                            // mode computes the Total/per-tool rate produces a
-                            // correct weighted rate at every level of the
-                            // hierarchy.
                             taColDefs = [
                                 { displayName: `${t} Active Users`, sourceSheet: 'split', sourceCol: splitAU, type: 'number',   toolFilter: t },
                                 { displayName: `${t} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k', toolFilter: t },
                             ];
                         } else {
-                            // Layout: all Totals first (Active Users, Credit Usage, Lines Generated,
-                            // Lines Accepted, Accepted Rate), then per-tool columns grouped by metric
-                            // in the same order. Per-tool Accepted Rate is always computed from
-                            // per-tool Lines Accepted / Lines Generated since prev sheets don't
-                            // store a precomputed per-tool rate column.
+                            // Layout: Totals first (Active Users, Credit Usage), then per-tool
+                            // columns grouped by metric in the same order.
                             taColDefs = [
                                 { displayName: 'Total Active Users', sourceSheet: 'total', sourceCol: totalAU, type: 'number'   },
                                 { displayName: 'Total Credit Usage', sourceSheet: 'total', sourceCol: totalCU, type: 'number_k' },
@@ -4282,19 +4318,54 @@
                         aggregateTree(currentTree, taColDefs, '');
                         evaluateCalculatedMetrics(currentTree, taColDefs);
 
-                        // ── Extract previous-period values from the SAME 2 sheets ──
-                        // Both splitDataTable and totalDataTable now contain current + prev columns
-                        // side-by-side (e.g. "Active Users - Metric" + "Active Users - Prev").
-                        // We re-use the same buildPrevNameCandidates heuristic to locate the prev
-                        // column index inside each DataTable, then accumulate into node.prevMetrics
-                        // on the already-built tree nodes before rolling up and flattening.
+                        // ── Build the previous-period tree from the prev Split / Total sheets ──
+                        // Mirrors the current-period merge above so the resulting prevKeyMap
+                        // is keyed by the same composite hierarchy path and uses the same
+                        // taColDefs[].displayName metric keys.
+                        //
+                        // Prev sheets typically rename the measure columns (e.g. the workbook's
+                        // Split-Metrics-Prev uses "Pervious Period Active Users" instead of
+                        // "Active Users - Metric"; Total-Prev uses "Total Active User - Prev").
+                        // resolvePrevName auto-pairs the current sourceCol to the prev sheet's
+                        // equivalent by trying a fixed set of naming conventions, so the user
+                        // does not have to configure these mappings manually.
                         prevKeyMap = {};
-                        {
-                            // Derive prev-name candidates from a current-period source column name.
-                            // "Active Users - Metric" → tries "Active Users - Prev", "Active Users Prev", etc.
+                        if (splitPrevDataTable || totalPrevDataTable) {
+
+                            // Self-mode: prev source is the SAME fetched table as the
+                            // current period (prev columns live on the same sheet).
+                            const splitPrevIsSelf = splitPrevDataTable === splitDataTable;
+                            const totalPrevIsSelf = totalPrevDataTable === totalDataTable;
+
+                            // Explicit prev-column overrides — when set, they bypass auto-detect
+                            // entirely. This is the authoritative path the user should rely on
+                            // when the heuristic naming patterns don't apply.
+                            const explicitPrevColMap = {
+                                // displayName → explicit prev column field ID / caption
+                                'Total Active Users':    getSetting('totalActiveUsersPrevCol', ''),
+                                'Total Credit Usage':    getSetting('totalCreditUsagePrevCol', ''),
+                            };
+                            // Per-tool split prev columns reuse the same source column across all tools;
+                            // the toolFilter dimension does the per-tool partitioning at merge time.
+                            const explicitSplitPrev = {
+                                activeUsers:    getSetting('splitActiveUsersPrevCol', ''),
+                                creditUsage:    getSetting('splitCreditUsagePrevCol', ''),
+                            };
+                            const sourceColToSplitKey = {
+                                [splitAU]:   'activeUsers',
+                                [splitCU]:   'creditUsage',
+                            };
+
+                            // Build pattern candidates for a given current-period source column.
+                            // sourceCol may be an internal Tableau field ID like
+                            // "[federated.X].[usr:Calculation_Y:qk]"; we first resolve it to its
+                            // human caption (e.g. "Active Users - Metric") via getFieldDisplayName,
+                            // then derive prev-name variants.
                             const buildPrevNameCandidates = (currentSourceCol) => {
                                 if (!currentSourceCol) return [];
                                 const orig = currentSourceCol.trim();
+                                // Resolve the field's display caption — this is what prev sheets
+                                // are typically named after, not the internal ID.
                                 const caption = getFieldDisplayName(orig) || orig;
                                 const sources = caption !== orig ? [caption, orig] : [orig];
                                 const variants = [];
@@ -4306,7 +4377,7 @@
                                     variants.push(
                                         src,
                                         base,
-                                        'Pervious Period ' + base,
+                                        'Pervious Period ' + base,   // workbook's intentional misspelling
                                         'Previous Period ' + base,
                                         base + ' - Prev',
                                         base + ' Prev',
@@ -4316,170 +4387,227 @@
                                         src + ' Prev',
                                     );
                                 }
+                                // Deduplicate while preserving order
                                 return Array.from(new Set(variants));
                             };
 
-                            const resolvePrevColIdx = (currentSourceCol, columns) => {
-                                for (const c of buildPrevNameCandidates(currentSourceCol)) {
-                                    const idx = findColIdx(columns, c);
-                                    if (idx >= 0) return idx;
+                            // Determine the explicit prev column for a given taColDef, if set.
+                            // Returns '' if no explicit mapping exists (caller falls back to auto-detect).
+                            const explicitPrevForCol = (col) => {
+                                if (col.sourceSheet === 'total') {
+                                    return explicitPrevColMap[col.displayName] || '';
+                                }
+                                if (col.sourceSheet === 'split') {
+                                    const key = sourceColToSplitKey[col.sourceCol];
+                                    return key ? (explicitSplitPrev[key] || '') : '';
+                                }
+                                return '';
+                            };
+
+                            // Resolve a column INDEX in a non-pivot prev DataTable.
+                            // Returns -1 if no pattern matches. excludeIdx (self-mode) is
+                            // the current column's own index — skipped so the prev value
+                            // doesn't collapse onto the current column when both live on
+                            // the same sheet.
+                            const resolvePrevColIdx = (currentSourceCol, prevColumns, excludeIdx = -1) => {
+                                const candidates = buildPrevNameCandidates(currentSourceCol);
+                                for (const c of candidates) {
+                                    const idx = findColIdx(prevColumns, c);
+                                    if (idx >= 0 && idx !== excludeIdx) return idx;
                                 }
                                 return -1;
                             };
 
-                            const resolvePrevMeasureName = (currentSourceCol, distinctMeasureNames) => {
-                                for (const c of buildPrevNameCandidates(currentSourceCol)) {
+                            // Resolve the prev measure-name string used in a pivot DataTable.
+                            // Returns null if no pattern matches anything in the Measure Names domain.
+                            // excludeMeasure (self-mode) is the current column's own measure
+                            // name — skipped for the same reason as excludeIdx above.
+                            const resolvePrevMeasureName = (currentSourceCol, distinctMeasureNames, excludeMeasure = null) => {
+                                const candidates = buildPrevNameCandidates(currentSourceCol);
+                                for (const c of candidates) {
                                     for (const mn of distinctMeasureNames) {
+                                        if (excludeMeasure && mn === excludeMeasure) continue;
                                         if (pivotMeasureMatches(mn, c)) return mn;
                                     }
                                 }
                                 return null;
                             };
 
-                            // Resolve prev column per taColDef (done once, reused per row)
-                            const splitPrevResolved = new Map();
+                            // Detect hierarchy & pivot structure on each prev sheet
+                            const pSplitHierCols = splitPrevDataTable ? detectTAHierCols(splitPrevDataTable, dynColField, emailColForTA) : [];
+                            const pTotalHierCols = totalPrevDataTable ? detectTAHierCols(totalPrevDataTable, dynColField, emailColForTA) : [];
+                            const pSplitPivot = splitPrevDataTable ? detectPivotCols(splitPrevDataTable) : { isPivot: false };
+                            const pTotalPivot = totalPrevDataTable ? detectPivotCols(totalPrevDataTable) : { isPivot: false };
+
+                            // Pre-compute distinct Measure Names domains for pivot sheets (used by resolvePrevMeasureName)
+                            const collectMeasureNames = (dt, pivot) => {
+                                if (!dt || !pivot.isPivot) return [];
+                                const set = new Set();
+                                dt.data.forEach(row => {
+                                    const v = row[pivot.mnIdx]?.value;
+                                    if (v) set.add(v.toString());
+                                });
+                                return Array.from(set);
+                            };
+                            const splitPrevMeasureNames = collectMeasureNames(splitPrevDataTable, pSplitPivot);
+                            const totalPrevMeasureNames = collectMeasureNames(totalPrevDataTable, pTotalPivot);
+
+                            // Build per-taColDefs resolved name maps so the merge loop doesn't re-resolve every row.
+                            // Resolution precedence: explicit override (from settings) > auto-detected name candidates.
+                            const splitPrevResolved = new Map(); // displayName → matched col idx OR measure-name string
                             const totalPrevResolved = new Map();
 
-                            if (splitPivot.isPivot) {
-                                const splitMeasureNames = [];
-                                const seen = new Set();
-                                splitDataTable.data.forEach(row => {
-                                    const v = row[splitPivot.mnIdx]?.value;
-                                    if (v && !seen.has(v)) { seen.add(v); splitMeasureNames.push(v.toString()); }
-                                });
-                                taColDefs.forEach(col => {
-                                    if (col.sourceSheet !== 'split') return;
-                                    const mn = resolvePrevMeasureName(col.sourceCol, splitMeasureNames);
-                                    if (mn) splitPrevResolved.set(col.displayName, mn);
-                                });
-                            } else {
-                                taColDefs.forEach(col => {
-                                    if (col.sourceSheet !== 'split') return;
-                                    const idx = resolvePrevColIdx(col.sourceCol, splitDataTable.columns);
-                                    splitPrevResolved.set(col.displayName, idx);
-                                });
-                            }
-
-                            if (totalPivot.isPivot) {
-                                const totalMeasureNames = [];
-                                const seen = new Set();
-                                totalDataTable.data.forEach(row => {
-                                    const v = row[totalPivot.mnIdx]?.value;
-                                    if (v && !seen.has(v)) { seen.add(v); totalMeasureNames.push(v.toString()); }
-                                });
-                                taColDefs.forEach(col => {
-                                    if (col.sourceSheet !== 'total') return;
-                                    const mn = resolvePrevMeasureName(col.sourceCol, totalMeasureNames);
-                                    if (mn) totalPrevResolved.set(col.displayName, mn);
-                                });
-                            } else {
-                                taColDefs.forEach(col => {
-                                    if (col.sourceSheet !== 'total') return;
-                                    const idx = resolvePrevColIdx(col.sourceCol, totalDataTable.columns);
-                                    totalPrevResolved.set(col.displayName, idx);
-                                });
-                            }
-
-                            // Merge prev values from splitDataTable into node.prevMetrics
-                            splitDataTable.data.forEach(row => {
-                                const path = computeLeafPath(row, splitHierCols);
-                                if (!path) return;
-                                const node = nodePathMap[path];
-                                if (!node) return;
-
-                                let rowTool = null;
-                                if (dynColIdx >= 0) {
-                                    const tv = row[dynColIdx]?.value;
-                                    if (tv && tv !== 'null' && tv !== '%null%') rowTool = tv.toString();
-                                }
-                                if (rowTool && rowTool.toUpperCase() === 'TOTAL') return;
-
-                                if (splitPivot.isPivot) {
-                                    const measureName = row[splitPivot.mnIdx]?.value?.toString() || '';
-                                    const measureVal  = parseFloat(row[splitPivot.mvIdx]?.value);
-                                    if (!measureName || isNaN(measureVal)) return;
-                                    taColDefs.forEach(col => {
-                                        if (col.sourceSheet !== 'split') return;
-                                        if (col.toolFilter && rowTool !== col.toolFilter) return;
-                                        const matchedName = splitPrevResolved.get(col.displayName);
-                                        if (!matchedName || measureName !== matchedName) return;
-                                        if (!node.prevMetrics) node.prevMetrics = {};
-                                        node.prevMetrics[col.displayName] = (node.prevMetrics[col.displayName] || 0) + measureVal;
-                                    });
+                            // Resolver for a single col entry: tries explicit override first, then candidates.
+                            // isSelf = the prev source is the SAME table as the current period
+                            // (prev columns live alongside current ones), so we exclude the
+                            // current column itself from matching.
+                            const resolveForCol = (col, prevDT, pivot, distinctMeasureNames, isSelf) => {
+                                const explicit = explicitPrevForCol(col);
+                                if (pivot.isPivot) {
+                                    let selfMeasure = null;
+                                    if (isSelf) {
+                                        for (const mn of distinctMeasureNames) {
+                                            if (pivotMeasureMatches(mn, col.sourceCol)) { selfMeasure = mn; break; }
+                                        }
+                                    }
+                                    if (explicit) {
+                                        // Exact-or-fuzzy match the explicit caption against the measure-names domain
+                                        for (const mn of distinctMeasureNames) {
+                                            if (selfMeasure && mn === selfMeasure) continue;
+                                            if (pivotMeasureMatches(mn, explicit)) return mn;
+                                        }
+                                    }
+                                    return resolvePrevMeasureName(col.sourceCol, distinctMeasureNames, selfMeasure);
                                 } else {
-                                    taColDefs.forEach(col => {
-                                        if (col.sourceSheet !== 'split') return;
-                                        if (col.toolFilter && rowTool !== col.toolFilter) return;
-                                        const colIdx = splitPrevResolved.get(col.displayName);
-                                        if (colIdx === undefined || colIdx < 0) return;
-                                        const v = parseFloat(row[colIdx]?.value);
-                                        if (isNaN(v)) return;
-                                        if (!node.prevMetrics) node.prevMetrics = {};
-                                        node.prevMetrics[col.displayName] = (node.prevMetrics[col.displayName] || 0) + v;
-                                    });
+                                    const selfIdx = isSelf ? findColIdx(prevDT.columns, col.sourceCol) : -1;
+                                    if (explicit) {
+                                        const idx = findColIdx(prevDT.columns, explicit);
+                                        if (idx >= 0 && idx !== selfIdx) return idx;
+                                    }
+                                    return resolvePrevColIdx(col.sourceCol, prevDT.columns, selfIdx);
+                                }
+                            };
+
+                            taColDefs.forEach(col => {
+                                if (col.sourceSheet === 'split' && splitPrevDataTable) {
+                                    splitPrevResolved.set(col.displayName, resolveForCol(col, splitPrevDataTable, pSplitPivot, splitPrevMeasureNames, splitPrevIsSelf));
+                                }
+                                if (col.sourceSheet === 'total' && totalPrevDataTable) {
+                                    totalPrevResolved.set(col.displayName, resolveForCol(col, totalPrevDataTable, pTotalPivot, totalPrevMeasureNames, totalPrevIsSelf));
                                 }
                             });
 
-                            // Merge prev values from totalDataTable into node.prevMetrics
-                            totalDataTable.data.forEach(row => {
-                                const path = computeLeafPath(row, totalHierCols);
-                                if (!path) return;
-                                let node = nodePathMap[path];
-                                if (!node) {
-                                    const leafSegment = path.split(' > ').pop();
-                                    const candidates = leafNameToNodes[leafSegment];
-                                    if (candidates && candidates.length === 1) node = candidates[0];
-                                }
-                                if (!node) return;
+                            // Guard: only build the prev tree if at least one metric resolved
+                            // to a distinct prev column/measure. Otherwise (e.g. self-mode on a
+                            // sheet with no "... - Prev" columns) leave prevKeyMap empty so the
+                            // renderer shows no delta line instead of a misleading "N/A".
+                            const isPrevResolved = (v) => (typeof v === 'number' ? v >= 0 : !!v);
+                            const anyPrevResolved =
+                                Array.from(splitPrevResolved.values()).some(isPrevResolved) ||
+                                Array.from(totalPrevResolved.values()).some(isPrevResolved);
+                            if (anyPrevResolved) {
 
-                                if (totalPivot.isPivot) {
-                                    const measureName = row[totalPivot.mnIdx]?.value?.toString() || '';
-                                    const measureVal  = parseFloat(row[totalPivot.mvIdx]?.value);
-                                    if (!measureName || isNaN(measureVal)) return;
-                                    taColDefs.forEach(col => {
-                                        if (col.sourceSheet !== 'total') return;
-                                        const matchedName = totalPrevResolved.get(col.displayName);
-                                        if (!matchedName || measureName !== matchedName) return;
-                                        if (!node.prevMetrics) node.prevMetrics = {};
-                                        node.prevMetrics[col.displayName] = (node.prevMetrics[col.displayName] || 0) + measureVal;
-                                    });
-                                } else {
-                                    taColDefs.forEach(col => {
-                                        if (col.sourceSheet !== 'total') return;
-                                        const colIdx = totalPrevResolved.get(col.displayName);
-                                        if (colIdx === undefined || colIdx < 0) return;
-                                        const v = parseFloat(row[colIdx]?.value);
-                                        if (isNaN(v)) return;
-                                        if (!node.prevMetrics) node.prevMetrics = {};
-                                        node.prevMetrics[col.displayName] = (node.prevMetrics[col.displayName] || 0) + v;
-                                    });
-                                }
-                            });
+                            // Seed tree from whichever prev sheet is present (prefer split for richer hierarchy)
+                            const seedDT = splitPrevDataTable || totalPrevDataTable;
+                            const seedHierCols = splitPrevDataTable ? pSplitHierCols : pTotalHierCols;
+                            const prevTree = buildTree(seedDT, seedHierCols, [], -1, null, -1, -1, '');
+                            const pNodePathMap = buildNodePathMap(prevTree, '');
 
-                            // Roll prevMetrics up through the tree (parent = sum of children)
-                            (function aggregatePrevMetrics(nodes) {
-                                Object.values(nodes).forEach(node => {
-                                    if (node.children && Object.keys(node.children).length > 0) {
-                                        aggregatePrevMetrics(node.children);
-                                        Object.values(node.children).forEach(child => {
-                                            if (!child.prevMetrics) return;
-                                            Object.keys(child.prevMetrics).forEach(key => {
-                                                if (!node.prevMetrics) node.prevMetrics = {};
-                                                node.prevMetrics[key] = (node.prevMetrics[key] || 0) + (child.prevMetrics[key] || 0);
-                                            });
+                            // Dynamic Columns index in the prev split sheet (for per-tool filter matching)
+                            const pSplitDynColIdx = splitPrevDataTable ? findColIdx(splitPrevDataTable.columns, dynColField) : -1;
+
+                            // Merge prev split rows
+                            if (splitPrevDataTable) {
+                                splitPrevDataTable.data.forEach(row => {
+                                    const path = computeLeafPath(row, pSplitHierCols);
+                                    if (!path) return;
+                                    const node = pNodePathMap[path];
+                                    if (!node) return;
+
+                                    let rowTool = null;
+                                    if (pSplitDynColIdx >= 0) {
+                                        const tv = row[pSplitDynColIdx]?.value;
+                                        if (tv && tv !== 'null' && tv !== '%null%') rowTool = tv.toString();
+                                    }
+                                    if (rowTool && rowTool.toUpperCase() === 'TOTAL') return;
+
+                                    if (pSplitPivot.isPivot) {
+                                        const measureName = row[pSplitPivot.mnIdx]?.value?.toString() || '';
+                                        const measureVal  = parseFloat(row[pSplitPivot.mvIdx]?.value);
+                                        if (!measureName || isNaN(measureVal)) return;
+                                        taColDefs.forEach(col => {
+                                            if (col.sourceSheet !== 'split') return;
+                                            if (col.toolFilter && rowTool !== col.toolFilter) return;
+                                            const matchedName = splitPrevResolved.get(col.displayName);
+                                            if (!matchedName || measureName !== matchedName) return;
+                                            if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
+                                            node.metrics[col.displayName] += measureVal;
+                                        });
+                                    } else {
+                                        taColDefs.forEach(col => {
+                                            if (col.sourceSheet !== 'split') return;
+                                            if (col.toolFilter && rowTool !== col.toolFilter) return;
+                                            const colIdx = splitPrevResolved.get(col.displayName);
+                                            if (colIdx === undefined || colIdx < 0) return;
+                                            const v = parseFloat(row[colIdx]?.value);
+                                            if (isNaN(v)) return;
+                                            if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
+                                            node.metrics[col.displayName] += v;
                                         });
                                     }
                                 });
-                            })(currentTree);
+                            }
 
-                            // Flatten node.prevMetrics into prevKeyMap keyed by composite path
-                            (function flattenPrevToKeyMap(nodes, parentPath) {
-                                Object.values(nodes).forEach(node => {
-                                    const path = parentPath ? parentPath + ' > ' + node.name : node.name;
-                                    if (node.prevMetrics) prevKeyMap[path] = { ...node.prevMetrics };
-                                    if (node.children) flattenPrevToKeyMap(node.children, path);
+                            // Leaf-name fallback map for total-sheet merging (shallower hierarchies)
+                            const pLeafNameToNodes = {};
+                            Object.entries(pNodePathMap).forEach(([path, n]) => {
+                                const leaf = path.split(' > ').pop();
+                                if (!pLeafNameToNodes[leaf]) pLeafNameToNodes[leaf] = [];
+                                pLeafNameToNodes[leaf].push(n);
+                            });
+
+                            // Merge prev total rows
+                            if (totalPrevDataTable) {
+                                totalPrevDataTable.data.forEach(row => {
+                                    const path = computeLeafPath(row, pTotalHierCols);
+                                    if (!path) return;
+                                    let node = pNodePathMap[path];
+                                    if (!node) {
+                                        const leafSegment = path.split(' > ').pop();
+                                        const candidates = pLeafNameToNodes[leafSegment];
+                                        if (candidates && candidates.length === 1) node = candidates[0];
+                                    }
+                                    if (!node) return;
+
+                                    if (pTotalPivot.isPivot) {
+                                        const measureName = row[pTotalPivot.mnIdx]?.value?.toString() || '';
+                                        const measureVal  = parseFloat(row[pTotalPivot.mvIdx]?.value);
+                                        if (!measureName || isNaN(measureVal)) return;
+                                        taColDefs.forEach(col => {
+                                            if (col.sourceSheet !== 'total') return;
+                                            const matchedName = totalPrevResolved.get(col.displayName);
+                                            if (!matchedName || measureName !== matchedName) return;
+                                            if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
+                                            node.metrics[col.displayName] += measureVal;
+                                        });
+                                    } else {
+                                        taColDefs.forEach(col => {
+                                            if (col.sourceSheet !== 'total') return;
+                                            const colIdx = totalPrevResolved.get(col.displayName);
+                                            if (colIdx === undefined || colIdx < 0) return;
+                                            const v = parseFloat(row[colIdx]?.value);
+                                            if (isNaN(v)) return;
+                                            if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
+                                            node.metrics[col.displayName] += v;
+                                        });
+                                    }
                                 });
-                            })(currentTree, '');
+                            }
+
+                            aggregateTree(prevTree, taColDefs, '');
+                            evaluateCalculatedMetrics(prevTree, taColDefs);
+                            flattenTreeToKeyMap(prevTree, prevKeyMap, '', taColDefs);
+                            } // end if (anyPrevResolved)
                         }
 
                     }
@@ -4794,7 +4922,9 @@
                             node.metrics[toolKey] = denToolVal !== 0 ? (numToolVal / denToolVal) * 100 : 0;
                         });
                     }
-                    // Tool-aware computed metrics (e.g. Total Accepted Rate = Total Lines Accepted / Total Lines Generated)
+                    // Tool-aware computed metrics: any colDef with sourceSheet 'computed'
+                    // and a numerator/denominator. (None are configured now that only
+                    // Active Users and Credit Usage are shown — kept generic for safety.)
                     if (col.sourceSheet === 'computed' && col.numCol && col.denCol) {
                         const numVal = node.metrics[col.numCol] || 0;
                         const denVal = node.metrics[col.denCol] || 0;
