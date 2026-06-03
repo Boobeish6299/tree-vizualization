@@ -1337,6 +1337,72 @@
             animation: spin 0.7s linear infinite;
             flex-shrink: 0;
         }
+
+        /* ================================================================
+           8. Skeleton Loader — shimmer table shown while a filter-change
+              refetch is in progress. Replaces stale data immediately so
+              users are never left looking at outdated numbers.
+           ================================================================ */
+        @keyframes skeleton-shimmer {
+            0%   { background-position: -600px 0; }
+            100% { background-position:  600px 0; }
+        }
+        .skeleton-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            min-width: max-content;
+            table-layout: fixed;
+        }
+        .skeleton-table th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: var(--header-bg);
+            padding: var(--cell-padding-v) var(--cell-padding-h);
+            border-bottom: 2px solid var(--border-color);
+            height: 36px;
+        }
+        .skeleton-table th:first-child {
+            position: sticky; left: 0; z-index: 30; background: var(--header-bg);
+            width: 200px; min-width: 160px; max-width: 240px;
+        }
+        .skeleton-table th:not(:first-child) { width: 150px; min-width: 140px; }
+        .skeleton-table th .sk { height: 10px; width: 60%; margin: auto; }
+        .skeleton-table th:first-child .sk { margin-left: 0; }
+        .skeleton-table td {
+            padding: var(--cell-padding-v) var(--cell-padding-h);
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: middle;
+        }
+        .skeleton-table td:first-child {
+            position: sticky; left: 0; z-index: 10; background: var(--row-bg);
+        }
+        .skeleton-table tr:nth-child(even) td             { background: var(--alt-row-bg); }
+        .skeleton-table tr:nth-child(even) td:first-child { background: var(--alt-row-bg); }
+        .sk {
+            display: block;
+            border-radius: 4px;
+            background: linear-gradient(
+                90deg,
+                var(--border-color, #dde3ed) 25%,
+                #eef1f5 50%,
+                var(--border-color, #dde3ed) 75%
+            );
+            background-size: 1200px 100%;
+            animation: skeleton-shimmer 1.5s ease-in-out infinite;
+        }
+        .sk-name  { height: 13px; width: 65%; }
+        .sk-val   { height: 13px; width: 52%; margin-left: auto; }
+        .sk-delta { height: 10px; width: 38%; margin-left: auto; margin-top: 4px; }
+        /* stagger widths per row so skeleton looks organic */
+        tr:nth-child(3n)   .sk-name  { width: 55%; }
+        tr:nth-child(3n+1) .sk-name  { width: 72%; }
+        tr:nth-child(5n)   .sk-val   { width: 44%; }
+        tr:nth-child(4n)   .sk-delta { width: 30%; }
+        tr.sk-l2 td:first-child { padding-left: 12px; }
+        tr.sk-l3 td:first-child { padding-left: 30px; }
+        tr.sk-l4 td:first-child { padding-left: 48px; }
     </style>
 </head>
 
@@ -3864,6 +3930,48 @@
         }
 
 
+
+        /* ----------------------------------------------------------------
+           showSkeletonTable()
+           Renders a shimmer placeholder table in #tree-container.
+           Called at the start of every filter-triggered refetch so users
+           see immediate visual feedback instead of stale data.
+           ---------------------------------------------------------------- */
+        function showSkeletonTable() {
+            const container = document.getElementById('tree-container');
+            if (!container) return;
+
+            // Use current colDefs if available, otherwise fall back to generic cols
+            const numMetricCols = (colDefs && colDefs.length > 0) ? colDefs.length : 5;
+            const ROW_COUNT = 14;
+
+            // Indent pattern: L2, L3, L3, L4, L2, L3, L3, L2 … to mimic real tree
+            const levelPat = [0, 1, 1, 2, 0, 1, 2, 2, 0, 1, 1, 0, 1, 2];
+            const levelClass = ['sk-l2', 'sk-l3', 'sk-l3', 'sk-l4'];
+
+            let hdrCells = '<th><span class="sk sk-name"></span></th>';
+            for (let c = 0; c < numMetricCols; c++) {
+                hdrCells += '<th><span class="sk" style="height:10px;width:50%;margin-left:auto"></span></th>';
+            }
+
+            let bodyRows = '';
+            for (let i = 0; i < ROW_COUNT; i++) {
+                const lvl = levelPat[i % levelPat.length];
+                const cls = levelClass[lvl] || 'sk-l2';
+                let cells = '<td><span class="sk sk-name"></span></td>';
+                for (let c = 0; c < numMetricCols; c++) {
+                    cells += '<td><span class="sk sk-val"></span><span class="sk sk-delta"></span></td>';
+                }
+                bodyRows += `<tr class="${cls}">${cells}</tr>`;
+            }
+
+            container.innerHTML =
+                `<table class="skeleton-table">` +
+                `<thead><tr>${hdrCells}</tr></thead>` +
+                `<tbody>${bodyRows}</tbody>` +
+                `</table>`;
+        }
+
         async function fetchDataAndRender() {
             if (fetchInProgress) return;
             fetchInProgress = true;
@@ -3878,10 +3986,12 @@
             let tSigDone, tFetchStart, tFetchDone, tBuildDone, tRenderDone;
             try {
             if (isRefresh) {
-                // Show a non-blocking badge over the existing table instead of
-                // hiding it — users can still read current data while Snowflake
-                // processes the new filter.
-                if (overlayEl) overlayEl.classList.add('visible');
+                // Filter change: replace existing table with a skeleton loader
+                // immediately so users see clear visual feedback instead of
+                // stale data that looks like it hasn't changed yet.
+                showSkeletonTable();
+                // Keep the small overlay badge hidden (skeleton is the indicator)
+                if (overlayEl) overlayEl.classList.remove('visible');
             } else {
                 // First load: show full spinner (no data to show yet).
                 loadingEl.style.display = 'flex';
