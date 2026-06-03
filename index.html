@@ -2364,24 +2364,25 @@
                             // If WE set the suppress, lift it now so the final fetch proceeds.
                             if (suppressedByFilterApply) {
                                 suppressedByFilterApply = false;
-                                suppressFetch = false;
-                                if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
                                 forceCollapseOnNextFetch = true;
                                 expandedNodes.clear();
-                                // Call fetchDataAndRender directly — the apply is fully
-                                // done and all Phase 2 FilterChanged events have already
-                                // been suppressed (they fired before filterApplyActive=''
-                                // was saved).  Reset pendingFetch first so a premature
-                                // in-flight render (if any) doesn't spawn an extra one.
+                                // BUG 1 FIX: sync lastTeamSelectionStamp NOW so the
+                                // normal SettingsChanged path never sees a stale stamp.
+                                // syncSelectionToSettings() wrote a new stamp during
+                                // Phase 2; because that SettingsChanged was swallowed by
+                                // the filterApplyActive='1' guard, lastTeamSelectionStamp
+                                // was never updated.  Without this, the very next
+                                // SettingsChanged (any saveAsync in any extension) would
+                                // see stamp !== lastTeamSelectionStamp and fire a second
+                                // debouncedFetch().
+                                lastTeamSelectionStamp = tableau.extensions.settings.get('teamSelectionStamp') || lastTeamSelectionStamp;
                                 pendingFetch = false;
-                                // Re-arm suppress for 45 s to absorb SummaryDataChanged
-                                // events fired by Phase 2's Snowflake recompute (these
-                                // arrive seconds/minutes after filterApplyActive clears).
-                                // suppressFetch is set but fetchDataAndRender() below
-                                // bypasses it — it's the ONE definitive post-apply fetch.
-                                suppressFetch = true;
-                                if (suppressTimer) clearTimeout(suppressTimer);
-                                suppressTimer = setTimeout(() => { suppressFetch = false; suppressTimer = null; }, 45000);
+                                // BUG 2 FIX: use suppressNextEventsFor() (not a manual
+                                // suppressFetch=true) so it ALSO cancels any fetchTimeout
+                                // that was armed during the window between the 30 s timer
+                                // expiring and this path running.
+                                suppressNextEventsFor(45000);
+                                console.log('[visual-ext] filterApplyActive cleared → one definitive fetch, suppress extended 45 s');
                                 fetchDataAndRender();
                                 return;
                             }
@@ -4001,9 +4002,17 @@
                 `</table>`;
         }
 
+        let _fetchRenderCount = 0; // diagnostic counter — visible in console
+
         async function fetchDataAndRender() {
             if (fetchInProgress) return;
             fetchInProgress = true;
+            const _callId = ++_fetchRenderCount;
+            // Each call prints its number + a stack trace so you can see exactly
+            // what triggered it. Open DevTools → Console to inspect.
+            console.groupCollapsed(`[visual-ext] fetchDataAndRender #${_callId} | suppressFetch=${suppressFetch} | pendingFetch=${pendingFetch}`);
+            console.trace('call stack');
+            console.groupEnd();
             const isRefresh = hasLoadedOnce; // true = data already on screen, use overlay
             const loadingEl   = document.getElementById('loading');
             const overlayEl   = document.getElementById('refresh-overlay');
@@ -4015,11 +4024,10 @@
             let tSigDone, tFetchStart, tFetchDone, tBuildDone, tRenderDone;
             try {
             if (isRefresh) {
-                // Filter change: replace existing table with a skeleton loader
-                // immediately so users see clear visual feedback instead of
-                // stale data that looks like it hasn't changed yet.
-                showSkeletonTable();
-                // Keep the small overlay badge hidden (skeleton is the indicator)
+                // Skeleton deferred — only shown once we confirm a real fetch
+                // is needed (after signature check below). Showing it here would
+                // cause a pointless flash when the fast-path (same scope,
+                // pendingFetch re-entry) calls renderTable() without fetching.
                 if (overlayEl) overlayEl.classList.remove('visible');
             } else {
                 // First load: show full spinner (no data to show yet).
@@ -4130,12 +4138,19 @@
                         return;
                     }
                     ({ splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable } = cachedEntry.tables);
+                    // Raw-cache hit — data tables reused but tree will rebuild from them.
+                    // Show skeleton so the user sees the table refreshing.
+                    if (isRefresh) showSkeletonTable();
                     if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Cached ✓';
                     tFetchStart = tSigDone; // no actual fetch
                     tFetchDone  = tSigDone;
                     console.log('[HierExt] raw-cache-hit: skipping Snowflake fetch for sig:', lastDataSignature);
                 } else {
-                    // Cache miss — fetch from Snowflake via Tableau
+                    // Cache miss — real Snowflake fetch needed.
+                    // Show skeleton NOW (we know data will change) so users see
+                    // immediate feedback. Signature-unchanged fast-path calls
+                    // renderTable() directly and never reaches this branch.
+                    if (isRefresh) showSkeletonTable();
                     if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Refreshing…';
                     tFetchStart = performance.now();
                     [splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable] = await Promise.all([
@@ -5136,7 +5151,12 @@
             }
             } finally {
                 fetchInProgress = false;
-                if (pendingFetch) { pendingFetch = false; fetchDataAndRender(); }
+                // Only honour pendingFetch if suppress is not active.
+                // A stale event that arrived while the 45 s post-apply suppress
+                // was expiring would set pendingFetch=true but shouldn't trigger
+                // a second Snowflake round-trip — suppress guards against that.
+                if (pendingFetch && !suppressFetch) { pendingFetch = false; fetchDataAndRender(); }
+                else if (pendingFetch) { pendingFetch = false; } // discard suppressed pending
             }
         }
 
