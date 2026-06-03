@@ -2108,7 +2108,7 @@
            ================================================================ */
         let unregisterHandlers = [];
         let fetchTimeout = null;
-        let summaryFetchTimeout = null;
+        let fetchScheduledAt = 0; // absolute performance.now() time the pending fetch will fire
         let fetchInProgress = false;
         let pendingFetch = false;
         // Timer set on startup to fetch independently if the filter extension
@@ -2158,21 +2158,31 @@
             suppressTimer = setTimeout(() => { suppressFetch = false; suppressTimer = null; }, ms);
         }
 
-        function debouncedFetch() {
+        // Single shared timer across FilterChanged (3000ms) and
+        // SummaryDataChanged (6000ms). These previously used two INDEPENDENT
+        // timers, so a load burst containing both event kinds fired TWO full
+        // fetches (one at 3s, one at 6s) — each re-spawning the large-data
+        // round-trip. Coalesce into one pending fetch: keep whichever deadline
+        // is later, so a slow summary event can extend the window to absorb
+        // settling data, while a lone fast event still fires at 3s.
+        function scheduleFetch(delay) {
             if (suppressFetch) return;
             if (fetchInProgress) { pendingFetch = true; return; }
+            const targetAt = performance.now() + delay;
+            // A fetch is already scheduled to fire at/after this request's
+            // deadline → keep it (coalesce) rather than arming a second timer.
+            if (fetchTimeout && fetchScheduledAt >= targetAt) return;
             if (fetchTimeout) clearTimeout(fetchTimeout);
-            // 3000ms: enough to batch rapid multi-filter changes and absorb
-            // Snowflake query latency before queuing a new round-trip.
-            fetchTimeout = setTimeout(() => fetchDataAndRender(), 3000);
+            fetchScheduledAt = targetAt;
+            fetchTimeout = setTimeout(() => {
+                fetchTimeout = null;
+                fetchScheduledAt = 0;
+                fetchDataAndRender();
+            }, delay);
         }
 
-        function debouncedFetchSlow() {
-            if (suppressFetch) return;
-            if (fetchInProgress) { pendingFetch = true; return; }
-            if (summaryFetchTimeout) clearTimeout(summaryFetchTimeout);
-            summaryFetchTimeout = setTimeout(() => fetchDataAndRender(), 6000);
-        }
+        function debouncedFetch()     { scheduleFetch(3000); }
+        function debouncedFetchSlow() { scheduleFetch(6000); }
 
         function setupEventListenersAndFetch() {
             const dashboard = tableau.extensions.dashboardContent.dashboard;
