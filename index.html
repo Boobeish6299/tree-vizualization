@@ -2012,6 +2012,10 @@
         let summaryFetchTimeout = null;
         let fetchInProgress = false;
         let pendingFetch = false;
+        // Timer set on startup to fetch independently if the filter extension
+        // never signals (absent/misconfigured). Cancelled when filterApplyActive='1'
+        // is detected, meaning the filter extension is running and will signal us.
+        let _firstLoadPendingTimer = null;
         // Generation token: incremented on every setup. Async work that
         // started under an older generation is discarded — prevents listener
         // leaks when Save re-runs setup while a previous getParametersAsync
@@ -2116,6 +2120,13 @@
                                 // click. We'll do one final fetch when the flag clears.
                                 suppressedByFilterApply = true;
                                 suppressNextEventsFor(90000);
+                                // Filter extension confirmed running — cancel the
+                                // first-load fallback timer so it doesn't fire while
+                                // we wait for the single definitive post-apply fetch.
+                                if (_firstLoadPendingTimer) {
+                                    clearTimeout(_firstLoadPendingTimer);
+                                    _firstLoadPendingTimer = null;
+                                }
                                 return;
                             }
                             // Flag cleared → apply is fully done (or unrelated change).
@@ -2126,7 +2137,15 @@
                                 if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
                                 forceCollapseOnNextFetch = true;
                                 expandedNodes.clear();
-                                debouncedFetch();
+                                // First load: call fetchDataAndRender directly — this is
+                                // the ONE definitive fetch (scope already applied by filter
+                                // extension). No debounce needed; nothing to batch.
+                                // Subsequent loads: debounce to absorb rapid filter bursts.
+                                if (!hasLoadedOnce) {
+                                    fetchDataAndRender();
+                                } else {
+                                    debouncedFetch();
+                                }
                                 return;
                             }
                             // Normal SettingsChanged (no filter-apply suppress active):
@@ -2146,7 +2165,24 @@
                 console.warn('[visual-ext] SettingsChanged listener failed:', e);
             }
 
-            debouncedFetch();
+            // On first load: wait for the filter extension to complete its
+            // initial apply before fetching. This ensures exactly ONE fetch
+            // with the correct scope (correct date window / team filter),
+            // instead of an immediate stale fetch followed by a second
+            // post-apply fetch. The SettingsChanged listener above triggers
+            // fetchDataAndRender() when filterApplyActive clears.
+            //
+            // Fallback timer: if the filter extension never sets filterApplyActive
+            // within 15 seconds (absent, disabled, or misconfigured), fetch
+            // independently so the tree is not permanently blank.
+            if (!hasLoadedOnce) {
+                _firstLoadPendingTimer = setTimeout(() => {
+                    _firstLoadPendingTimer = null;
+                    if (!hasLoadedOnce) fetchDataAndRender();
+                }, 15000);
+            } else {
+                debouncedFetch();
+            }
         }
 
         /* ================================================================
@@ -3808,12 +3844,12 @@
                     fieldNameMap.clear();
                     try {
                         const wsToScan = [splitWs, totalWs, splitPrevWs, totalPrevWs].filter(Boolean);
-                        for (const ws of wsToScan) {
+                        await Promise.all(wsToScan.map(async ws => {
                             const dss = await ws.getDataSourcesAsync();
                             for (const ds of dss) {
                                 ds.fields.forEach(f => registerField(f.id, f.name));
                             }
-                        }
+                        }));
                         fieldNamesLoaded = true;
                     } catch (e) {
                         console.warn('[HierExt] Error loading data sources for friendly names:', e);
