@@ -2264,6 +2264,16 @@
             suppressFetch = true;
             if (suppressTimer) clearTimeout(suppressTimer);
             suppressTimer = setTimeout(() => { suppressFetch = false; suppressTimer = null; }, ms);
+            // KEY FIX: cancel any debounce timer that was armed BEFORE suppress
+            // was set (e.g. from ParameterChanged events fired by changeValueAsync
+            // before filterApplyActive='1' propagated via saveAsync).  Without
+            // this, that timer fires 1 s later and triggers a phantom render
+            // entirely inside the suppress window.
+            if (fetchTimeout) { clearTimeout(fetchTimeout); fetchTimeout = null; fetchScheduledAt = 0; }
+            // Also discard any pending-fetch flag so the post-suppress render is
+            // truly the only one — prevents a second render being queued if the
+            // premature fetch was still in-flight when we suppressed.
+            pendingFetch = false;
         }
 
         // Single shared timer across FilterChanged (3000ms) and
@@ -2358,15 +2368,21 @@
                                 if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
                                 forceCollapseOnNextFetch = true;
                                 expandedNodes.clear();
-                                // First load: call fetchDataAndRender directly — this is
-                                // the ONE definitive fetch (scope already applied by filter
-                                // extension). No debounce needed; nothing to batch.
-                                // Subsequent loads: debounce to absorb rapid filter bursts.
-                                if (!hasLoadedOnce) {
-                                    fetchDataAndRender();
-                                } else {
-                                    debouncedFetch();
-                                }
+                                // Call fetchDataAndRender directly — the apply is fully
+                                // done and all Phase 2 FilterChanged events have already
+                                // been suppressed (they fired before filterApplyActive=''
+                                // was saved).  Reset pendingFetch first so a premature
+                                // in-flight render (if any) doesn't spawn an extra one.
+                                pendingFetch = false;
+                                // Re-arm suppress for 45 s to absorb SummaryDataChanged
+                                // events fired by Phase 2's Snowflake recompute (these
+                                // arrive seconds/minutes after filterApplyActive clears).
+                                // suppressFetch is set but fetchDataAndRender() below
+                                // bypasses it — it's the ONE definitive post-apply fetch.
+                                suppressFetch = true;
+                                if (suppressTimer) clearTimeout(suppressTimer);
+                                suppressTimer = setTimeout(() => { suppressFetch = false; suppressTimer = null; }, 45000);
+                                fetchDataAndRender();
                                 return;
                             }
                             // Normal SettingsChanged (no filter-apply suppress active):
