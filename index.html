@@ -1184,6 +1184,34 @@
             font-weight: 500;
         }
 
+        .leader-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--avatar-bg, #8ab4f8);
+            color: var(--avatar-color, #ffffff);
+            font-size: 11px;
+            font-weight: 600;
+            font-family: var(--font-family, 'Inter', sans-serif);
+            flex-shrink: 0;
+            letter-spacing: 0.02em;
+            user-select: none;
+        }
+
+        #btn-expand-all, #btn-collapse-all {
+            font-family: var(--btn-expand-font-family, 'Inter', sans-serif);
+            font-size: var(--btn-expand-font-size, 11px);
+            color: var(--btn-expand-color, #667eea);
+            background: var(--btn-expand-bg, #eef0ff);
+            border-color: var(--btn-expand-border, #d4d8ff);
+        }
+        #btn-expand-all:hover, #btn-collapse-all:hover {
+            filter: brightness(0.93);
+        }
+
         /* Metric Cells — two-line layout */
         .metric-value {
             font-size: var(--font-size);
@@ -1645,6 +1673,57 @@
                             <input type="checkbox" id="cfg-show-toggle" checked>
                             <label for="cfg-show-toggle">Show expand/collapse toggle icons</label>
                         </div>
+                        <div class="cfg-checkbox-row">
+                            <input type="checkbox" id="cfg-show-initials" checked>
+                            <label for="cfg-show-initials">Show leader initials avatar</label>
+                        </div>
+                    </div>
+
+                    <!-- Expand / Collapse Button Styling -->
+                    <div class="step-divider" style="margin-top:18px">🔘 Expand / Collapse Buttons</div>
+                    <div id="section-btn-expand">
+                        <div class="cfg-row">
+                            <div>
+                                <label class="cfg-label">Font Family</label>
+                                <select id="cfg-btn-expand-font-family" class="cfg-select">
+                                    <option value="'Inter', sans-serif">Inter</option>
+                                    <option value="'Roboto', sans-serif">Roboto</option>
+                                    <option value="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif">Segoe UI</option>
+                                    <option value="Arial, sans-serif">Arial</option>
+                                    <option value="'Tableau Book', Arial, sans-serif">Tableau Book</option>
+                                    <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="cfg-label">Font Size (px)</label>
+                                <input type="number" id="cfg-btn-expand-font-size" class="cfg-input" value="11" min="8" max="20">
+                            </div>
+                        </div>
+                        <div class="cfg-row" style="margin-top:10px">
+                            <div>
+                                <label class="cfg-label">Text Color</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-btn-expand-color" class="cfg-color-input" value="#667eea">
+                                    <input type="text" id="cfg-btn-expand-color-hex" class="cfg-color-hex" value="#667eea">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="cfg-label">Background</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-btn-expand-bg" class="cfg-color-input" value="#eef0ff">
+                                    <input type="text" id="cfg-btn-expand-bg-hex" class="cfg-color-hex" value="#eef0ff">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cfg-row" style="margin-top:10px">
+                            <div>
+                                <label class="cfg-label">Border Color</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-btn-expand-border" class="cfg-color-input" value="#d4d8ff">
+                                    <input type="text" id="cfg-btn-expand-border-hex" class="cfg-color-hex" value="#d4d8ff">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div><!-- /.display-two-col -->
@@ -2002,6 +2081,11 @@
             root.style.setProperty('--cell-padding-v', getSetting('cellPaddingV', '10') + 'px');
             root.style.setProperty('--cell-padding-h', getSetting('cellPaddingH', '12') + 'px');
             root.style.setProperty('--indent-per-level', getSetting('indentPerLevel', '18') + 'px');
+            root.style.setProperty('--btn-expand-font-family', getSetting('btnExpandFontFamily', "'Inter', sans-serif"));
+            root.style.setProperty('--btn-expand-font-size', getSetting('btnExpandFontSize', '11') + 'px');
+            root.style.setProperty('--btn-expand-color', getSetting('btnExpandColor', '#667eea'));
+            root.style.setProperty('--btn-expand-bg', getSetting('btnExpandBg', '#eef0ff'));
+            root.style.setProperty('--btn-expand-border', getSetting('btnExpandBorder', '#d4d8ff'));
         }
 
         /* ================================================================
@@ -2274,11 +2358,20 @@
             setConfigValue('cfg-leader-label', 'leaderLabel', 'TEAM');
             const showToggle = getSetting('showToggleIcon', 'true');
             document.getElementById('cfg-show-toggle').checked = showToggle !== 'false';
+            document.getElementById('cfg-show-initials').checked = getSetting('showInitials', 'true') !== 'false';
+
+            // Expand/Collapse Button styling
+            setConfigValue('cfg-btn-expand-font-family', 'btnExpandFontFamily', "'Inter', sans-serif");
+            setConfigValue('cfg-btn-expand-font-size', 'btnExpandFontSize', '11');
+            setConfigColorValue('cfg-btn-expand-color', 'cfg-btn-expand-color-hex', 'btnExpandColor', '#667eea');
+            setConfigColorValue('cfg-btn-expand-bg', 'cfg-btn-expand-bg-hex', 'btnExpandBg', '#eef0ff');
+            setConfigColorValue('cfg-btn-expand-border', 'cfg-btn-expand-border-hex', 'btnExpandBorder', '#d4d8ff');
 
             // Setup color syncs
             ['cfg-font-color', 'cfg-positive-color', 'cfg-negative-color', 'cfg-neutral-color',
                 'cfg-header-bg', 'cfg-header-font-color', 'cfg-row-bg', 'cfg-alt-row-bg',
-                'cfg-hover-bg', 'cfg-border-color'].forEach(id => {
+                'cfg-hover-bg', 'cfg-border-color',
+                'cfg-btn-expand-color', 'cfg-btn-expand-bg', 'cfg-btn-expand-border'].forEach(id => {
                     setupColorSync(id, id + '-hex');
                 });
 
@@ -3469,6 +3562,14 @@
             s.set('indentPerLevel', document.getElementById('cfg-indent').value);
             s.set('leaderLabel', document.getElementById('cfg-leader-label').value);
             s.set('showToggleIcon', document.getElementById('cfg-show-toggle').checked ? 'true' : 'false');
+            s.set('showInitials', document.getElementById('cfg-show-initials').checked ? 'true' : 'false');
+
+            // Expand/Collapse Button styling
+            s.set('btnExpandFontFamily', document.getElementById('cfg-btn-expand-font-family').value);
+            s.set('btnExpandFontSize', document.getElementById('cfg-btn-expand-font-size').value);
+            s.set('btnExpandColor', document.getElementById('cfg-btn-expand-color').value);
+            s.set('btnExpandBg', document.getElementById('cfg-btn-expand-bg').value);
+            s.set('btnExpandBorder', document.getElementById('cfg-btn-expand-border').value);
 
             // Prefix filter
             s.set('prefixFilter', document.getElementById('cfg-prefix-filter').value);
@@ -5229,7 +5330,7 @@
 
         function buildTableRow(rowData, rowIdx, colDefs, prevKeyMap, indent,
                                showToggle, isSplitEnabled, hasPrev,
-                               activeUserMetricName, emailColName) {
+                               activeUserMetricName, emailColName, showInitials) {
                 const tr = document.createElement('tr');
                 tr.setAttribute('data-path', rowData.path);
 
@@ -5254,6 +5355,16 @@
                         });
                     }
                     leaderContent.appendChild(toggle);
+                }
+
+                if (showInitials) {
+                    const avatar = document.createElement('div');
+                    avatar.className = 'leader-avatar';
+                    const words = (rowData.node.name || '').trim().split(/\s+/);
+                    avatar.textContent = words.length >= 2
+                        ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+                        : (rowData.node.name || '').slice(0, 2).toUpperCase();
+                    leaderContent.appendChild(avatar);
                 }
 
                 const nameSpan = document.createElement('span');
@@ -5355,6 +5466,7 @@
 
             const leaderLabel = getSetting('leaderLabel', 'TEAM');
             const showToggle = getSetting('showToggleIcon', 'true') !== 'false';
+            const showInitials = getSetting('showInitials', 'true') !== 'false';
             const indent = parseInt(getSetting('indentPerLevel', '18'));
             const hasPrev = Object.keys(prevKeyMap).length > 0;
             const isSplitEnabled = getSetting('toolSplitEnabled', 'false') === 'true' && activeTools.length > 0;
@@ -5499,7 +5611,7 @@
                 const tr = buildTableRow(
                     rowData, i, colDefs, prevKeyMap, indent,
                     showToggle, isSplitEnabled, hasPrev,
-                    activeUserMetricName, emailColName
+                    activeUserMetricName, emailColName, showInitials
                 );
                 fragment.appendChild(tr);
             });
