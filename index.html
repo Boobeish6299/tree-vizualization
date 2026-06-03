@@ -1134,6 +1134,29 @@
             pointer-events: none;
         }
 
+        /* ── Virtual scroll (windowed rendering) ───────────────────────────────
+           Only applied when the table carries the .virtual class (Configure →
+           "Virtualize large tables"). Everything here is scoped under
+           .data-table.virtual so the default render path is byte-for-byte
+           unchanged. With windowing only a slice of rows is in the DOM, so CSS
+           nth-child(even) zebra no longer matches the logical row index — we set
+           the stripe explicitly via .vrow-alt/.vrow-base (higher specificity than
+           the nth-child rule, so it wins) and keep :hover working by placing the
+           hover rules last. Spacer rows hold the off-screen scroll height. */
+        .data-table.virtual tbody tr.vrow-alt,
+        .data-table.virtual tbody tr.vrow-alt td:first-child { background: var(--alt-row-bg); }
+        .data-table.virtual tbody tr.vrow-base,
+        .data-table.virtual tbody tr.vrow-base td:first-child { background: var(--row-bg); }
+        .data-table.virtual tbody tr:hover,
+        .data-table.virtual tbody tr:hover td:first-child { background: var(--hover-bg); }
+        .data-table.virtual tbody tr.v-spacer td {
+            padding: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            position: static !important;
+        }
+        .data-table.virtual tbody tr.v-spacer td::after { display: none !important; }
+
         /* Leader Cell (tree node) */
         .leader-cell {
             display: flex;
@@ -1682,6 +1705,10 @@
                             <input type="checkbox" id="cfg-show-initials" checked>
                             <label for="cfg-show-initials">Show leader initials avatar</label>
                         </div>
+                        <div class="cfg-checkbox-row">
+                            <input type="checkbox" id="cfg-virtual-scroll">
+                            <label for="cfg-virtual-scroll">Virtualize large tables (render only on-screen rows — faster on big trees)</label>
+                        </div>
                     </div>
 
                     <!-- Expand / Collapse Button Styling -->
@@ -1808,6 +1835,16 @@
         let fieldNameMap = new Map(); // Dynamic mapping of technical field IDs to friendly captions
         let fieldNamesLoaded = false; // True after first successful getDataSourcesAsync — skip on re-fetches
         let expandedNodes = new Set();
+        // Cache of sorted child arrays, keyed by a node's children-map object
+        // (consumed in flattenVisibleRows). A buildTree() rebuild produces fresh
+        // child-map objects, so this WeakMap self-invalidates on any data change —
+        // stale sort order can never survive a refetch, and old entries are GC'd.
+        const sortedChildrenCache = new WeakMap();
+        // Built-tree cache (Issue 2) temporarily DISABLED while investigating a
+        // "filters not reflecting" report. When false, raw-cache hits rebuild the
+        // tree from cached tables (the original pre-Issue-2 behavior). Flip to true
+        // to re-enable the fast path once the apply-coordination issue is resolved.
+        const ENABLE_BUILT_TREE_CACHE = false;
         let hasLoadedOnce = false;    // true after first successful data render
         let activeSortCol = null;     // null, 'leader', or a metric displayName
         let activeSortDir = 'none';   // 'none', 'asc', 'desc'
@@ -2384,6 +2421,7 @@
             const showToggle = getSetting('showToggleIcon', 'true');
             document.getElementById('cfg-show-toggle').checked = showToggle !== 'false';
             document.getElementById('cfg-show-initials').checked = getSetting('showInitials', 'true') !== 'false';
+            document.getElementById('cfg-virtual-scroll').checked = getSetting('virtualScroll', 'false') === 'true';
 
             // Expand/Collapse Button styling
             setConfigColorValue('cfg-toolbar-bg', 'cfg-toolbar-bg-hex', 'toolbarBg', '#ffffff');
@@ -3590,6 +3628,7 @@
             s.set('leaderLabel', document.getElementById('cfg-leader-label').value);
             s.set('showToggleIcon', document.getElementById('cfg-show-toggle').checked ? 'true' : 'false');
             s.set('showInitials', document.getElementById('cfg-show-initials').checked ? 'true' : 'false');
+            s.set('virtualScroll', document.getElementById('cfg-virtual-scroll').checked ? 'true' : 'false');
 
             // Expand/Collapse Button styling
             s.set('toolbarBg', document.getElementById('cfg-toolbar-bg').value);
@@ -3710,18 +3749,24 @@
         }
 
         // Probe the active `Selected Type` (tool) filter from a non-tree
-        // worksheet. The Split-Metrics worksheet is the source feed for the
-        // TOOL dropdown in the filter sidebar, so the sidebar intentionally
-        // does NOT write the tool filter back to it (otherwise the dropdown
-        // would shrink to its own selection). That means Split-Metrics's
-        // Dynamic Columns field always contains every tool — we cannot use it
-        // to tell which tools the user actually picked. Every other dashboard
-        // worksheet (KPI tiles, Total, Total-Prev, Leader Filter) does receive
-        // the tool filter via applyFilterAsync, so we read it from there.
+        // worksheet. The TOOL dropdown in the filter sidebar is sourced from one
+        // worksheet (e.g. "Active Users") and the sidebar intentionally does NOT
+        // write the tool filter back to its own source (otherwise the dropdown
+        // would shrink to its own selection). Every OTHER dashboard worksheet
+        // (KPI tiles, Total, Total-Prev, Leader Filter, ...) does receive the
+        // tool filter via applyFilterAsync, so we read it from there.
         //
-        // Returns null when the filter isn't present (e.g. all tools selected
-        // / filter cleared), in which case callers should fall back to the
-        // detected-tool set as the active selection.
+        // We must scan EVERY non-tree worksheet rather than probing just the
+        // first one: the first non-tree worksheet may well be the tool filter's
+        // own source sheet, which by design never carries the `Selected Type`
+        // filter. Probing only that sheet returns null → the caller falls back
+        // to all tools → every tool column renders even when a single tool is
+        // selected. Scanning all non-tree sheets finds the first that actually
+        // carries the filter.
+        //
+        // Returns null when the filter isn't present on ANY non-tree worksheet
+        // (e.g. all tools selected / filter cleared), in which case callers
+        // should fall back to the detected-tool set as the active selection.
         async function readSelectedToolFilter(dashboard) {
             try {
                 const treeSourceSheets = new Set([
@@ -3731,18 +3776,25 @@
                     getSetting('totalMetricsPrevSheet', 'Total - Prev'),
                     'Leader Filter'
                 ]);
-                const probe = dashboard.worksheets.find(w => w.name && !treeSourceSheets.has(w.name));
-                if (!probe) return null;
-                const filters = await probe.getFiltersAsync();
-                const typeF = filters.find(f => {
-                    const fn = (f.fieldName || '').toLowerCase();
-                    return fn === 'selected type' || fn.endsWith(']selected type') || fn.includes('selected type');
-                });
-                if (!typeF) return null;
-                const av = (typeF.appliedValues || [])
-                    .map(v => v.value != null ? v.value.toString() : '')
-                    .filter(v => v && v !== 'null' && v !== '%null%');
-                return av;
+                const candidates = dashboard.worksheets.filter(w => w.name && !treeSourceSheets.has(w.name));
+                for (const ws of candidates) {
+                    let filters;
+                    try {
+                        filters = await ws.getFiltersAsync();
+                    } catch (e) {
+                        continue; // sheet on a different data source / can't be probed
+                    }
+                    const typeF = filters.find(f => {
+                        const fn = (f.fieldName || '').toLowerCase();
+                        return fn === 'selected type' || fn.endsWith(']selected type') || fn.includes('selected type')
+                            || fn === 'type' || fn.endsWith(']type') || fn === 'none:type:nk';
+                    });
+                    if (!typeF) continue;
+                    return (typeF.appliedValues || [])
+                        .map(v => v.value != null ? v.value.toString() : '')
+                        .filter(v => v && v !== 'null' && v !== '%null%');
+                }
+                return null;
             } catch (e) {
                 return null;
             }
@@ -3789,7 +3841,8 @@
             probeFilters.forEach(f => {
                 const fn = (f.fieldName || '').toLowerCase();
                 // Tool filter
-                if (fn === 'selected type' || fn.endsWith(']selected type') || fn.includes('selected type')) {
+                if (fn === 'selected type' || fn.endsWith(']selected type') || fn.includes('selected type')
+                        || fn === 'type' || fn.endsWith(']type') || fn === 'none:type:nk') {
                     const av = (f.appliedValues || [])
                         .map(v => v.value != null ? v.value.toString() : '')
                         .sort();
@@ -3913,6 +3966,29 @@
                 const cacheIsFresh = cachedEntry && (Date.now() - cachedEntry.timestamp < RAW_CACHE_TTL);
 
                 if (cacheIsFresh) {
+                    // Built-tree fast path: when this exact scope+config was already
+                    // built, reuse the cached tree and skip the rebuild/aggregation/
+                    // PoP-resolution entirely. Guarded on !forceCollapseOnNextFetch:
+                    // when the filter extension just changed selection we defer to the
+                    // full build path (which owns force-collapse), so no expansion
+                    // behavior is lost. Configure-save clears the cache, so a cached
+                    // build is always valid under current settings.
+                    if (ENABLE_BUILT_TREE_CACHE && cachedEntry.built && !forceCollapseOnNextFetch) {
+                        ({ currentTree, prevKeyMap, colDefs } = cachedEntry.built);
+                        // Reconcile expansion state exactly like the build tail (4818+):
+                        // prune stale expanded paths, then restore defaults on refresh.
+                        const validPathsArr = [];
+                        collectAllParentPaths(currentTree, '', validPathsArr);
+                        const validPaths = new Set(validPathsArr);
+                        expandedNodes.forEach(p => { if (!validPaths.has(p)) expandedNodes.delete(p); });
+                        if (hasLoadedOnce) initializeExpandedState(currentTree, 0);
+                        hasLoadedOnce = true;
+                        if (overlayEl) overlayEl.classList.remove('visible');
+                        if (!isRefresh) { loadingEl.style.display = 'none'; toolbarEl.style.display = ''; }
+                        console.log('[HierExt] built-tree cache-hit: skipping rebuild for sig:', lastDataSignature);
+                        renderTable();
+                        return;
+                    }
                     ({ splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable } = cachedEntry.tables);
                     if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Cached ✓';
                     tFetchStart = tSigDone; // no actual fetch
@@ -4506,6 +4582,39 @@
                             }
                         });
 
+                        // ── TEMP DIAGNOSTIC: why do total-sheet metrics land on only one node? ──
+                        // Classify every Total-sheet row by whether its computed path matches a
+                        // tree node directly, via the leaf-name fallback, or not at all. Then dump
+                        // the merged total metrics on each top-level node. Remove once root-caused.
+                        try {
+                            const totalColNames = (taColDefs || []).filter(c => c.sourceSheet === 'total').map(c => c.displayName);
+                            let mDirect = 0, mFallback = 0, mAmbiguous = 0, mUnmatched = 0, mEmptyPath = 0;
+                            const unmatchedSamples = [];
+                            totalDataTable.data.forEach(row => {
+                                const p = computeLeafPath(row, totalHierCols);
+                                if (!p) { mEmptyPath++; return; }
+                                if (nodePathMap[p]) { mDirect++; return; }
+                                const leaf = p.split(' > ').pop();
+                                const cand = leafNameToNodes[leaf];
+                                if (cand && cand.length === 1) { mFallback++; }
+                                else if (cand && cand.length > 1) { mAmbiguous++; if (unmatchedSamples.length < 8) unmatchedSamples.push(p + '  (ambiguous leaf: ' + cand.length + ' nodes)'); }
+                                else { mUnmatched++; if (unmatchedSamples.length < 8) unmatchedSamples.push(p + '  (no node named "' + leaf + '")'); }
+                            });
+                            console.log('[HierExt][TotalDiag] treeSource=' + treeSourceName + ' (depth=' + bestDepth + ')');
+                            console.log('[HierExt][TotalDiag] totalRows=' + totalDataTable.data.length +
+                                ' | splitHierCols=[' + splitHierCols.map(h => h.level).join(', ') + ']' +
+                                ' | totalHierCols=[' + totalHierCols.map(h => h.level).join(', ') + ']');
+                            console.log('[HierExt][TotalDiag] totalMetricCols=[' + totalColNames.join(', ') + ']');
+                            console.log('[HierExt][TotalDiag] match: direct=' + mDirect + ' fallback=' + mFallback +
+                                ' ambiguous=' + mAmbiguous + ' unmatched=' + mUnmatched + ' emptyPath=' + mEmptyPath);
+                            if (unmatchedSamples.length) console.log('[HierExt][TotalDiag] unmatched/ambiguous total paths:\n  ' + unmatchedSamples.join('\n  '));
+                            const topNodeTotals = Object.values(currentTree).map(n => {
+                                const t = {}; totalColNames.forEach(c => { t[c] = n.metrics[c]; }); return n.name + ' => ' + JSON.stringify(t);
+                            });
+                            console.log('[HierExt][TotalDiag] per-top-node total metrics (pre-aggregate):\n  ' + topNodeTotals.join('\n  '));
+                        } catch (e) { console.warn('[HierExt][TotalDiag] failed', e); }
+                        // ── end TEMP DIAGNOSTIC ──
+
                         // Aggregate and evaluate current-period tree
                         aggregateTree(currentTree, taColDefs, '');
                         evaluateCalculatedMetrics(currentTree, taColDefs);
@@ -4828,6 +4937,17 @@
                 }
                 // First load always starts fully collapsed regardless of saved defaultExpandLevel.
                 hasLoadedOnce = true;
+
+                // Cache the built tree alongside the raw tables so a later revisit of
+                // this exact scope+config skips the rebuild/aggregation entirely
+                // (Configure-save calls rawDataCache.clear(), so any cached build stays
+                // valid under the current settings). The vestigial build outputs
+                // activeTools/hierarchyCols are always [], so these three references
+                // fully capture the render-relevant state.
+                if (lastDataSignature) {
+                    const _builtEntry = rawDataCache.get(lastDataSignature);
+                    if (_builtEntry) _builtEntry.built = { currentTree, prevKeyMap, colDefs };
+                }
 
                 // --- Render ---
                 tBuildDone = performance.now();
@@ -5493,6 +5613,104 @@
             return tr;
         }
 
+        // ── Virtual scroll (windowed rendering) state + helpers ────────────────
+        // Active only when the 'virtualScroll' setting is on AND the visible-row
+        // count exceeds VIRT_ROW_THRESHOLD. Renders just the on-screen slice of
+        // rows plus top/bottom spacer rows that reserve the off-screen height, so
+        // DOM node count stays ~constant regardless of tree size. Off by default →
+        // the normal full-render path runs and is byte-for-byte unchanged.
+        const VIRT_ROW_THRESHOLD = 100;
+        let virtualScrollState = null; // { wrapper, handler } for the active listener
+
+        // Remove any previously-attached scroll listener. Called at the start of
+        // every body render so listeners never stack, and toggling the setting off
+        // cleanly reverts to the normal path.
+        function detachVirtualScroll() {
+            if (virtualScrollState && virtualScrollState.wrapper && virtualScrollState.handler) {
+                virtualScrollState.wrapper.removeEventListener('scroll', virtualScrollState.handler);
+            }
+            virtualScrollState = null;
+        }
+
+        // Windowed body renderer. makeRow(rowData, i) builds the <tr> for logical
+        // row i; `rows` is the full flattened visibleRows array. `table` and `tbody`
+        // are freshly created this render and `table` is already in the DOM.
+        function setupVirtualBody(table, tbody, rows, makeRow) {
+            const wrapper = document.getElementById('table-wrapper');
+            const N = rows.length;
+            const BUFFER = 12; // extra rows rendered above/below the viewport
+
+            // 1. Measure a real row's height (rows are single-line / nowrap, so the
+            //    height is uniform). Fall back to 40px if not yet laid out.
+            const sample = makeRow(rows[0], 0);
+            tbody.appendChild(sample);
+            const colCount = sample.children.length;
+            let rowH = sample.getBoundingClientRect().height;
+            if (!rowH || rowH < 1) rowH = 40;
+            tbody.innerHTML = '';
+
+            // 2. Explicit <colgroup> so table-layout:fixed derives column widths from
+            //    the colgroup, NOT from the first tbody row (which may be a spacer
+            //    colspan cell that carries no per-column width). Matches .data-table
+            //    CSS widths (first col 200px, metric cols 150px).
+            if (!table.querySelector('colgroup')) {
+                const colgroup = document.createElement('colgroup');
+                for (let i = 0; i < colCount; i++) {
+                    const col = document.createElement('col');
+                    col.style.width = (i === 0 ? 200 : 150) + 'px';
+                    colgroup.appendChild(col);
+                }
+                table.insertBefore(colgroup, table.firstChild);
+            }
+            table.classList.add('virtual');
+
+            const makeSpacer = (h) => {
+                const tr = document.createElement('tr');
+                tr.className = 'v-spacer';
+                const td = document.createElement('td');
+                td.colSpan = colCount;
+                td.style.height = h + 'px';
+                tr.appendChild(td);
+                return tr;
+            };
+
+            let lastStart = -1, lastEnd = -1;
+            function renderWindow() {
+                const scrollTop = wrapper.scrollTop;
+                const viewport = wrapper.clientHeight || 600;
+                const visibleCount = Math.ceil(viewport / rowH);
+                const start = Math.max(0, Math.floor(scrollTop / rowH) - BUFFER);
+                const end = Math.min(N, start + visibleCount + BUFFER * 2);
+                if (start === lastStart && end === lastEnd) return; // window unchanged
+                lastStart = start; lastEnd = end;
+
+                const frag = document.createDocumentFragment();
+                if (start > 0) frag.appendChild(makeSpacer(start * rowH));
+                for (let i = start; i < end; i++) {
+                    const tr = makeRow(rows[i], i);
+                    // Zebra by LOGICAL index (CSS nth-child can't see it). nth-child(even)
+                    // styles 1-based even rows = zero-based odd indices → those get alt bg.
+                    tr.classList.add(i % 2 === 1 ? 'vrow-alt' : 'vrow-base');
+                    frag.appendChild(tr);
+                }
+                if (end < N) frag.appendChild(makeSpacer((N - end) * rowH));
+                tbody.innerHTML = '';
+                tbody.appendChild(frag);
+            }
+
+            renderWindow();
+
+            // Throttle scroll handling to one render per animation frame.
+            let ticking = false;
+            const handler = () => {
+                if (ticking) return;
+                ticking = true;
+                requestAnimationFrame(() => { ticking = false; renderWindow(); });
+            };
+            wrapper.addEventListener('scroll', handler);
+            virtualScrollState = { wrapper, handler };
+        }
+
         function renderTable() {
             // Disable/enable expand/collapse buttons based on tree state
             const allParentPaths = [];
@@ -5545,7 +5763,10 @@
             } catch (e) { /* leave teamPickSet null → show all */ }
 
             const visibleRows = [];
-            flattenVisibleRows(currentTree, 0, '', visibleRows, teamPickSet);
+            // Precompute the ancestor index once per render so the per-node team
+            // filter check is O(1)/O(depth) instead of an O(picks) scan (Issue 4).
+            const teamFilterAncestors = buildTeamFilterAncestors(teamPickSet);
+            flattenVisibleRows(currentTree, 0, '', visibleRows, teamPickSet, teamFilterAncestors);
 
             // Create table
             const table = document.createElement('table');
@@ -5651,25 +5872,35 @@
 
             table.appendChild(thead);
 
-            // Body — render all visible rows as proper <tr> elements inside <tbody>.
-            // Previously a virtual-scroll approach placed a <div> directly inside
-            // <tbody> (invalid HTML) and set position:absolute on <tr> elements,
-            // which broke column alignment and made metric values invisible.
+            // Body. Two paths share buildTableRow: the normal path builds every
+            // visible row; the virtual path (opt-in setting, large trees only)
+            // renders just the on-screen window. detachVirtualScroll() runs first
+            // unconditionally so a prior render's scroll listener never leaks and
+            // turning the setting off reverts cleanly. NOTE: an earlier virtual-
+            // scroll attempt put position:absolute <tr>s in a <div> inside <tbody>
+            // (invalid HTML) and broke alignment — this version keeps valid table
+            // structure, pins widths via <colgroup>, and uses spacer <tr>s.
+            detachVirtualScroll();
             const tbody = document.createElement('tbody');
-            const fragment = document.createDocumentFragment();
-
-            visibleRows.forEach((rowData, i) => {
-                const tr = buildTableRow(
-                    rowData, i, colDefs, prevKeyMap, indent,
-                    showToggle, isSplitEnabled, hasPrev,
-                    activeUserMetricName, emailColName, showInitials
-                );
-                fragment.appendChild(tr);
-            });
-
-            tbody.appendChild(fragment);
             table.appendChild(tbody);
-            container.appendChild(table);
+
+            const makeRow = (rowData, i) => buildTableRow(
+                rowData, i, colDefs, prevKeyMap, indent,
+                showToggle, isSplitEnabled, hasPrev,
+                activeUserMetricName, emailColName, showInitials
+            );
+
+            const virtualEnabled = getSetting('virtualScroll', 'false') === 'true';
+            if (virtualEnabled && visibleRows.length > VIRT_ROW_THRESHOLD) {
+                // Table must be in the DOM before measuring row height / viewport.
+                container.appendChild(table);
+                setupVirtualBody(table, tbody, visibleRows, makeRow);
+            } else {
+                const fragment = document.createDocumentFragment();
+                visibleRows.forEach((rowData, i) => fragment.appendChild(makeRow(rowData, i)));
+                tbody.appendChild(fragment);
+                container.appendChild(table);
+            }
 
             // Dynamically calculate and set top position for Row 2 headers to handle sticky scrolling cleanly
             if (isSplitEnabled) {
@@ -5696,22 +5927,49 @@
         // `pickSet === null` means no setting was written → no filter, show all.
         // `pickSet.size === 0` means the user explicitly cleared everything →
         // hide all rows (matches Cancel All semantics).
-        function nodeMatchesTeamFilter(nodePath, pickSet) {
+        // Build the set of every proper ' > '-boundary prefix of every pick. Used to
+        // answer the "ancestor" condition (cond 2) in O(1): nodePath is an ancestor of
+        // some pick iff it appears as a prefix here. Returns null for the no-filter /
+        // hide-all cases, where nodeMatchesTeamFilter short-circuits before using it.
+        function buildTeamFilterAncestors(pickSet) {
+            if (pickSet === null || pickSet.size === 0) return null;
+            const ancestors = new Set();
+            for (const pick of pickSet) {
+                let idx = pick.indexOf(' > ');
+                while (idx !== -1) {
+                    ancestors.add(pick.slice(0, idx));
+                    idx = pick.indexOf(' > ', idx + 3); // 3 = length of ' > '
+                }
+            }
+            return ancestors;
+        }
+
+        function nodeMatchesTeamFilter(nodePath, pickSet, ancestorsOfPicks) {
             if (pickSet === null) return true;
             if (pickSet.size === 0) return false;
+            // Cond 1 — direct match: this node IS a pick.
             if (pickSet.has(nodePath)) return true;
-            for (const pick of pickSet) {
-                if (pick.startsWith(nodePath + ' > ')) return true;
-                if (nodePath.startsWith(pick + ' > ')) return true;
+            // Cond 2 — ancestor: some pick lives under this node. Equivalent to the
+            // original `pick.startsWith(nodePath + ' > ')` scan, now an O(1) lookup.
+            if (ancestorsOfPicks && ancestorsOfPicks.has(nodePath)) return true;
+            // Cond 3 — descendant: this node lives under some pick. Equivalent to the
+            // original `nodePath.startsWith(pick + ' > ')` scan: check each proper
+            // ' > '-boundary prefix of nodePath against the picks (O(depth), depth ≤ 8).
+            let idx = nodePath.indexOf(' > ');
+            while (idx !== -1) {
+                if (pickSet.has(nodePath.slice(0, idx))) return true;
+                idx = nodePath.indexOf(' > ', idx + 3); // 3 = length of ' > '
             }
             return false;
         }
 
-        function flattenVisibleRows(nodes, depth, parentPath, result, teamPickSet) {
-            const nodesArr = Object.values(nodes);
-
+        function flattenVisibleRows(nodes, depth, parentPath, result, teamPickSet, teamFilterAncestors) {
+            // Resolve the active sort column, self-healing a stale selection whose
+            // column was removed via Configure. This still runs on every call because
+            // it can mutate the global activeSortCol/activeSortDir (original behavior).
+            let colDef = null;
             if (activeSortDir !== 'none') {
-                let colDef = colDefs.find(c => c.displayName === activeSortCol);
+                colDef = colDefs.find(c => c.displayName === activeSortCol);
                 if (!colDef && activeSortCol && activeSortCol.includes('__')) {
                     const baseMetric = activeSortCol.split('__')[0];
                     colDef = colDefs.find(c => c.displayName === baseMetric);
@@ -5722,27 +5980,50 @@
                 if (activeSortCol !== 'leader' && !colDef) {
                     activeSortCol = null;
                     activeSortDir = 'none';
-                    nodesArr.sort((a, b) => compareValues(a, b, null, null));
-                } else {
+                }
+            }
+
+            // Per-render sort memoization. The order of a node's children depends only
+            // on (activeSortCol, activeSortDir) and the node metrics — and the metrics
+            // are immutable for the lifetime of a built tree. So cache the sorted array
+            // keyed by the children-map object: pure expand/collapse and sort-toggle
+            // re-renders reuse it instead of re-sorting every level. Team filtering is
+            // applied AFTER the sort (below), so it is deliberately not in the key.
+            const cacheKey = (activeSortDir === 'none')
+                ? 'name'
+                : activeSortCol + '|' + activeSortDir;
+            let nodesArr;
+            const cachedSort = sortedChildrenCache.get(nodes);
+            if (cachedSort && cachedSort.key === cacheKey) {
+                nodesArr = cachedSort.arr;
+            } else {
+                nodesArr = Object.values(nodes);
+                // Mirror the original branch selection exactly: when a metric sort is
+                // active (colDef found) OR the leader column is sorted, sort with the
+                // direction applied — for 'leader', colDef is null and compareValues
+                // falls back to a name sort that still honors asc/desc. Otherwise sort
+                // by leader name ascending (the default / post-reset case).
+                if (activeSortDir !== 'none' && (activeSortCol === 'leader' || colDef)) {
                     nodesArr.sort((a, b) => {
-                        const cmp = compareValues(a, b, colDef, activeSortCol);
+                        const cmp = compareValues(a, b, colDef || null, activeSortCol);
                         return activeSortDir === 'asc' ? cmp : -cmp;
                     });
+                } else {
+                    // Default sorting is by leader name ascending
+                    nodesArr.sort((a, b) => compareValues(a, b, null, null));
                 }
-            } else {
-                // Default sorting is by leader name ascending
-                nodesArr.sort((a, b) => compareValues(a, b, null, null));
+                sortedChildrenCache.set(nodes, { key: cacheKey, arr: nodesArr });
             }
 
             nodesArr.forEach(node => {
                 const path = parentPath ? parentPath + ' > ' + node.name : node.name;
                 node._path = path;
-                if (!nodeMatchesTeamFilter(path, teamPickSet)) return;
+                if (!nodeMatchesTeamFilter(path, teamPickSet, teamFilterAncestors)) return;
                 result.push({ node, depth, path });
 
                 const hasChildren = node.children && Object.keys(node.children).length > 0;
                 if (hasChildren && expandedNodes.has(path)) {
-                    flattenVisibleRows(node.children, depth + 1, path, result, teamPickSet);
+                    flattenVisibleRows(node.children, depth + 1, path, result, teamPickSet, teamFilterAncestors);
                 }
             });
         }
