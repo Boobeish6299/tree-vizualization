@@ -1212,6 +1212,11 @@
             filter: brightness(0.93);
         }
 
+        #tree-toolbar {
+            background: var(--toolbar-bg, #ffffff);
+            border-bottom: 1px solid var(--border-color, #dde3ed);
+        }
+
         /* Metric Cells — two-line layout */
         .metric-value {
             font-size: var(--font-size);
@@ -1684,6 +1689,15 @@
                     <div id="section-btn-expand">
                         <div class="cfg-row">
                             <div>
+                                <label class="cfg-label">Toolbar Background</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-toolbar-bg" class="cfg-color-input" value="#ffffff">
+                                    <input type="text" id="cfg-toolbar-bg-hex" class="cfg-color-hex" value="#ffffff">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cfg-row" style="margin-top:10px">
+                            <div>
                                 <label class="cfg-label">Font Family</label>
                                 <select id="cfg-btn-expand-font-family" class="cfg-select">
                                     <option value="'Inter', sans-serif">Inter</option>
@@ -1769,7 +1783,7 @@
             <span>Initializing extension…</span>
         </div>
 
-        <div id="tree-toolbar" style="display: none; padding: 12px 24px; background: #ffffff; border-bottom: 1px solid #dde3ed; align-items: center; gap: 12px; flex-shrink: 0;">
+        <div id="tree-toolbar" style="display: none; padding: 12px 24px; align-items: center; gap: 12px; flex-shrink: 0;">
             <button id="btn-expand-all" class="btn-secondary" style="margin-top: 0;" onclick="expandAll()">Expand all</button>
             <button id="btn-collapse-all" class="btn-secondary" style="margin-top: 0;" onclick="collapseAll()">Collapse all</button>
         </div>
@@ -2086,6 +2100,7 @@
             root.style.setProperty('--btn-expand-color', getSetting('btnExpandColor', '#667eea'));
             root.style.setProperty('--btn-expand-bg', getSetting('btnExpandBg', '#eef0ff'));
             root.style.setProperty('--btn-expand-border', getSetting('btnExpandBorder', '#d4d8ff'));
+            root.style.setProperty('--toolbar-bg', getSetting('toolbarBg', '#ffffff'));
         }
 
         /* ================================================================
@@ -2361,6 +2376,7 @@
             document.getElementById('cfg-show-initials').checked = getSetting('showInitials', 'true') !== 'false';
 
             // Expand/Collapse Button styling
+            setConfigColorValue('cfg-toolbar-bg', 'cfg-toolbar-bg-hex', 'toolbarBg', '#ffffff');
             setConfigValue('cfg-btn-expand-font-family', 'btnExpandFontFamily', "'Inter', sans-serif");
             setConfigValue('cfg-btn-expand-font-size', 'btnExpandFontSize', '11');
             setConfigColorValue('cfg-btn-expand-color', 'cfg-btn-expand-color-hex', 'btnExpandColor', '#667eea');
@@ -2371,6 +2387,7 @@
             ['cfg-font-color', 'cfg-positive-color', 'cfg-negative-color', 'cfg-neutral-color',
                 'cfg-header-bg', 'cfg-header-font-color', 'cfg-row-bg', 'cfg-alt-row-bg',
                 'cfg-hover-bg', 'cfg-border-color',
+                'cfg-toolbar-bg',
                 'cfg-btn-expand-color', 'cfg-btn-expand-bg', 'cfg-btn-expand-border'].forEach(id => {
                     setupColorSync(id, id + '-hex');
                 });
@@ -3565,6 +3582,7 @@
             s.set('showInitials', document.getElementById('cfg-show-initials').checked ? 'true' : 'false');
 
             // Expand/Collapse Button styling
+            s.set('toolbarBg', document.getElementById('cfg-toolbar-bg').value);
             s.set('btnExpandFontFamily', document.getElementById('cfg-btn-expand-font-family').value);
             s.set('btnExpandFontSize', document.getElementById('cfg-btn-expand-font-size').value);
             s.set('btnExpandColor', document.getElementById('cfg-btn-expand-color').value);
@@ -5328,6 +5346,26 @@
             }
         }
 
+        const AVATAR_PALETTE = [
+            { bg: '#4f5bd5', fg: '#ffffff' },
+            { bg: '#962fbf', fg: '#ffffff' },
+            { bg: '#d62976', fg: '#ffffff' },
+            { bg: '#fa7e1e', fg: '#ffffff' },
+            { bg: '#2ea04f', fg: '#ffffff' },
+            { bg: '#0095f6', fg: '#ffffff' },
+            { bg: '#e91e63', fg: '#ffffff' },
+            { bg: '#00897b', fg: '#ffffff' },
+            { bg: '#f4511e', fg: '#ffffff' },
+            { bg: '#8e24aa', fg: '#ffffff' },
+            { bg: '#039be5', fg: '#ffffff' },
+            { bg: '#c0ca33', fg: '#333333' },
+        ];
+        function avatarColorForName(name) {
+            let h = 0;
+            for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+            return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
+        }
+
         function buildTableRow(rowData, rowIdx, colDefs, prevKeyMap, indent,
                                showToggle, isSplitEnabled, hasPrev,
                                activeUserMetricName, emailColName, showInitials) {
@@ -5364,6 +5402,9 @@
                     avatar.textContent = words.length >= 2
                         ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
                         : (rowData.node.name || '').slice(0, 2).toUpperCase();
+                    const ac = avatarColorForName(rowData.node.name || '');
+                    avatar.style.background = ac.bg;
+                    avatar.style.color = ac.fg;
                     leaderContent.appendChild(avatar);
                 }
 
