@@ -1129,7 +1129,7 @@
 
         .data-table thead th:hover,
         .data-table thead th:first-child:hover {
-            background: #e2e8f0 !important;
+            background: var(--header-hover-bg, #e2e8f0) !important;
         }
 
         .data-table thead th.active-sort {
@@ -1764,6 +1764,15 @@
                                 <input type="number" id="cfg-header-letter-spacing" class="cfg-input" value="0.05" min="0" max="0.3" step="0.01">
                             </div>
                         </div>
+                        <div class="cfg-row" style="margin-top:10px">
+                            <div>
+                                <label class="cfg-label">Hover Background</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-header-hover-bg" class="cfg-color-input" value="#e2e8f0">
+                                    <input type="text" id="cfg-header-hover-bg-hex" class="cfg-color-hex" value="#e2e8f0">
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Row & Table Styling + Hierarchy Behaviour -->
@@ -2290,6 +2299,7 @@
             root.style.setProperty('--neutral-color', getSetting('neutralColor', '#9b9b9b'));
             root.style.setProperty('--header-bg', getSetting('headerBg', '#eef2f7'));
             root.style.setProperty('--header-font-color', getSetting('headerFontColor', '#5a6a85'));
+            root.style.setProperty('--header-hover-bg', getSetting('headerHoverBg', '#e2e8f0'));
             root.style.setProperty('--header-font-size', getSetting('headerFontSize', '11') + 'px');
             root.style.setProperty('--header-font-weight', getSetting('headerFontWeight', '600'));
             root.style.setProperty('--header-letter-spacing', getSetting('headerLetterSpacing', '0.05') + 'em');
@@ -2456,7 +2466,27 @@
                 // the filter is fully committed to the worksheet's selection
                 // state; an immediate getSummaryDataAsync may still return
                 // unfiltered rows. Negligible vs Snowflake latency.
-                setTimeout(() => fetchDataAndRender(), 500);
+                //
+                // CRITICAL: fetchDataAndRender() silently no-ops while another
+                // fetch is in flight (fetchInProgress guard) and its pendingFetch
+                // queue is discarded under suppression — so a bare setTimeout
+                // call here could be DROPPED entirely when a prior fetch is
+                // still running (common on quick successive team picks, e.g.
+                // drilling L2 → L3), leaving a stale tree while the KPI tiles
+                // already show the new scope. Retry until the slot is free so
+                // the definitive fetch ALWAYS runs.
+                const fireDefinitiveFetch = (attempt) => {
+                    if (fetchInProgress) {
+                        if (attempt < 60) {
+                            setTimeout(() => fireDefinitiveFetch(attempt + 1), 500);
+                        } else {
+                            console.warn('[visual-ext] definitive fetch gave up waiting for in-flight fetch');
+                        }
+                        return;
+                    }
+                    fetchDataAndRender();
+                };
+                setTimeout(() => fireDefinitiveFetch(0), 500);
                 return;
             }
             const stamp = sync.stamp != null ? String(sync.stamp) : null;
@@ -2674,6 +2704,7 @@
             // Header
             setConfigColorValue('cfg-header-bg', 'cfg-header-bg-hex', 'headerBg', '#eef2f7');
             setConfigColorValue('cfg-header-font-color', 'cfg-header-font-color-hex', 'headerFontColor', '#5a6a85');
+            setConfigColorValue('cfg-header-hover-bg', 'cfg-header-hover-bg-hex', 'headerHoverBg', '#e2e8f0');
             setConfigValue('cfg-header-font-size', 'headerFontSize', '11');
             setConfigValue('cfg-header-font-weight', 'headerFontWeight', '600');
             setConfigValue('cfg-header-letter-spacing', 'headerLetterSpacing', '0.05');
@@ -2708,7 +2739,7 @@
 
             // Setup color syncs
             ['cfg-font-color', 'cfg-positive-color', 'cfg-negative-color', 'cfg-neutral-color',
-                'cfg-header-bg', 'cfg-header-font-color', 'cfg-row-bg', 'cfg-alt-row-bg',
+                'cfg-header-bg', 'cfg-header-font-color', 'cfg-header-hover-bg', 'cfg-row-bg', 'cfg-alt-row-bg',
                 'cfg-hover-bg', 'cfg-border-color', 'cfg-chevron-color', 'cfg-btn-active-bg',
                 'cfg-toolbar-bg',
                 'cfg-btn-expand-color', 'cfg-btn-expand-bg', 'cfg-btn-expand-border'].forEach(id => {
@@ -3885,6 +3916,7 @@
             // Header
             s.set('headerBg', document.getElementById('cfg-header-bg').value);
             s.set('headerFontColor', document.getElementById('cfg-header-font-color').value);
+            s.set('headerHoverBg', document.getElementById('cfg-header-hover-bg').value);
             s.set('headerFontSize', document.getElementById('cfg-header-font-size').value);
             s.set('headerFontWeight', document.getElementById('cfg-header-font-weight').value);
             s.set('headerLetterSpacing', document.getElementById('cfg-header-letter-spacing').value);
@@ -6384,18 +6416,34 @@
             const activeUserMetricName = getSetting('activeUserColumn', '');
             const emailColName = getSetting('emailColumn', '');
 
-            // Option B: team filtering is handled entirely by applyFilterAsync on
-            // Split-Metrics (applied by the filter extension on every team selection).
-            // getSummaryDataAsync already returns only the selected team's rows, so
-            // the tree is pre-filtered at the Snowflake level — no client-side row
-            // scanning needed. teamPickSet stays null so every fetched node passes
-            // through flattenVisibleRows unconditionally, avoiding the O(nodes×picks)
-            // buildTeamFilterAncestors scan and the per-node set lookups on every render.
-            const teamPickSet = null;
-            console.log('[HierExt] renderTable: teamPickSet=null (Option B — filtered by applyFilterAsync on Split-Metrics)');
+            // Team filtering: applyFilterAsync on the metric sheets (pushed by
+            // the filter extension) is the primary mechanism — fetched rows are
+            // already narrowed. The client-side prune below is a SAFETY NET on
+            // top: when a deep (L3+) selection's worksheet recompute hasn't
+            // committed by the time the definitive fetch reads summary data,
+            // the fetch can return unfiltered rows — the prune still restricts
+            // the rendered tree to the selected subtree (picks + their
+            // ancestors + descendants), so the visual always matches the
+            // sidebar selection. When the data IS properly filtered the prune
+            // is a no-op. Paths come from the Hierarchy Sync parameter
+            // ('|'-separated), normalized to the tree's ' > ' separators.
+            let teamPickSet = null;
+            if (lastTeamExplicitPaths) {
+                try {
+                    const arr = JSON.parse(lastTeamExplicitPaths);
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        teamPickSet = new Set(arr.map(p =>
+                            p.toString().split('|').map(s => s.trim()).join(' > ')));
+                    }
+                    // Empty array → treat as "no team filter" (show all), NOT
+                    // hide-all: Cancel All already blocks rows at the worksheet
+                    // level, and Select All must never blank the tree.
+                } catch (_) { /* malformed sync paths — show all */ }
+            }
+            const teamFilterAncestors = buildTeamFilterAncestors(teamPickSet);
+            console.log(`[HierExt] renderTable: teamPickSet=${teamPickSet ? teamPickSet.size + ' picks' : 'null (show all)'}`);
 
             const visibleRows = [];
-            const teamFilterAncestors = null; // unused in Option B
             flattenVisibleRows(currentTree, 0, '', visibleRows, teamPickSet, teamFilterAncestors);
 
             // Create table
