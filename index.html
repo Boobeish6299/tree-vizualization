@@ -2237,12 +2237,12 @@
         let suppressFetch = false;
         let suppressTimer = null;
         // Tracks the last team-selection timestamp written by the filter
-        // extension, so we react only when it actually changes (not on every
-        // unrelated SettingsChanged event we ourselves trigger by saving).
+        // extension (via the 'Hierarchy Sync' parameter), so we react only
+        // when it actually changes.
         let lastTeamSelectionStamp = null;
-        // Set to true when the filter extension writes filterApplyActive='1',
-        // cleared when it writes filterApplyActive=''. Used to lift suppress
-        // only for the suppress we ourselves set (not row-click suppresses).
+        // Set to true when the filter extension writes applyActive='1' to the
+        // sync parameter, cleared when it writes applyActive=''. Used to lift
+        // suppress only for the suppress we ourselves set (not row-click ones).
         let suppressedByFilterApply = false;
         // Cached signature of the last Tableau fetch (date params + tool
         // selection). When a FilterChanged event fires but neither dates nor
@@ -2250,15 +2250,98 @@
         // the source data for the tree is unchanged, so we skip the 4-sheet
         // round-trip and just re-render from currentTree.
         let lastDataSignature = null;
+        // FIX 3: Track the last team selection separately from the data
+        // signature. The fast-path cache guard now checks BOTH so a team
+        // change while date/tool are unchanged always causes a cache miss.
+        let lastTeamExplicitPaths = null;
         // Cached unfiltered tree from the last full fetch. Used when only the
         // team selection (settings) changed and we want to re-render with a
         // different visibility filter without re-querying Tableau.
         let lastBuiltTreeSignature = null;
         // When true, the next fetchDataAndRender will fully collapse the tree
         // regardless of the configured defaultExpandLevel. Set by the
-        // SettingsChanged listener so Cancel All / Select All / any
+        // sync-parameter handler so Cancel All / Select All / any
         // filter-extension selection change starts collapsed.
         let forceCollapseOnNextFetch = false;
+
+        // --- Cross-extension sync via the 'Hierarchy Sync' workbook parameter ---
+        // The filter extension serialises {applyActive, stamp, paths} as JSON
+        // into this string parameter. Parameters are dashboard-global (unlike
+        // tableau.extensions.settings, which is scoped per extension instance —
+        // the old settings-based channel NEVER reached us, which is why team
+        // picks stopped busting the fetch-signature cache and the tree went
+        // stale until reload). ParameterChanged on this param drives the
+        // suppress/definitive-fetch orchestration below, and computeFetchSignature
+        // reads .paths out of it as the authoritative team signature.
+        const SYNC_PARAM_NAME = 'Hierarchy Sync';
+
+        function parseSyncParam(raw) {
+            if (!raw || typeof raw !== 'string') return null;
+            try {
+                const o = JSON.parse(raw);
+                return (o && typeof o === 'object') ? o : null;
+            } catch (_) { return null; }
+        }
+
+        // Handles every value transition of the sync parameter. Mirrors the
+        // phases of the filter extension's applyAllFilters():
+        //   applyActive '1'  → apply in progress: suppress our event-driven
+        //                      fetches (each phase's applyFilterAsync burst
+        //                      would otherwise fire a separate Snowflake query).
+        //   applyActive ''   → apply finished (800ms after the last
+        //                      applyFilterAsync, so the FilterChanged burst has
+        //                      already arrived and been discarded): do ONE
+        //                      definitive fetch and keep events suppressed.
+        //   stamp-only change (no apply cycle seen, e.g. we loaded mid-apply) →
+        //                      just resync the stamp; the FilterChanged events
+        //                      from applyFilterAsync arm the fetch, and the new
+        //                      paths in the signature guarantee a cache miss.
+        function handleSyncParamValue(raw, isInitial) {
+            const sync = parseSyncParam(raw);
+            if (!sync) return;
+            if (isInitial) {
+                lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : null;
+                return;
+            }
+            if (sync.applyActive === '1') {
+                suppressedByFilterApply = true;
+                suppressNextEventsFor(30000);
+                // Filter extension confirmed running — cancel the first-load
+                // fallback timer so it doesn't fire while we wait for the
+                // single definitive post-apply fetch.
+                if (_firstLoadPendingTimer) {
+                    clearTimeout(_firstLoadPendingTimer);
+                    _firstLoadPendingTimer = null;
+                }
+                return;
+            }
+            if (suppressedByFilterApply) {
+                suppressedByFilterApply = false;
+                forceCollapseOnNextFetch = true;
+                expandedNodes.clear();
+                // Sync the stamp NOW so a later stamp-only transition never
+                // sees a stale value and double-fires.
+                lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : lastTeamSelectionStamp;
+                pendingFetch = false;
+                // suppressNextEventsFor() (not a bare suppressFetch=true) so any
+                // fetchTimeout armed between the 30s window expiring and this
+                // transition arriving is also cancelled.
+                suppressNextEventsFor(45000);
+                console.log('[visual-ext] sync param: applyActive cleared → one definitive fetch, suppress extended 45 s');
+                // Wait 500ms before fetching: applyFilterAsync resolves before
+                // the filter is fully committed to the worksheet's selection
+                // state; an immediate getSummaryDataAsync may still return
+                // unfiltered rows. Negligible vs Snowflake latency.
+                setTimeout(() => fetchDataAndRender(), 500);
+                return;
+            }
+            const stamp = sync.stamp != null ? String(sync.stamp) : null;
+            if (stamp && stamp !== lastTeamSelectionStamp) {
+                lastTeamSelectionStamp = stamp;
+                // No debouncedFetch() here — FilterChanged from applyFilterAsync
+                // already armed it, and the changed paths bust the signature.
+            }
+        }
 
         function suppressNextEventsFor(ms) {
             suppressFetch = true;
@@ -2312,8 +2395,27 @@
             unregisterHandlers = [];
             const myGen = ++setupGeneration;
 
+            // The hierarchy source sheet name (default 'Leader Filter'). The
+            // filter extension intentionally NEVER applies the team L2-L9
+            // filter to this sheet (to prevent the picker dropdown from
+            // self-filtering). Any FilterChanged event on it is therefore
+            // irrelevant to tree data and must be ignored — otherwise the
+            // event fires outside the suppressRefetchFor window, queues a
+            // debouncedFetch that reads unfiltered data, and causes a
+            // double-flicker: first render with all data, then re-render with
+            // selected-team data after Split-Metrics catches up.
+            const _hierSourceSheetName = getSetting('leaderHierarchySheet', 'Leader Filter');
+
             dashboard.worksheets.forEach(w => {
-                unregisterHandlers.push(w.addEventListener(tableau.TableauEventType.FilterChanged, (ev) => { console.log('[visual-ext] FilterChanged on', ev && ev.worksheet && ev.worksheet.name ? ev.worksheet.name : (ev && ev.worksheet)); debouncedFetch(); }));
+                unregisterHandlers.push(w.addEventListener(tableau.TableauEventType.FilterChanged, (ev) => {
+                    const wsName = ev && ev.worksheet && ev.worksheet.name ? ev.worksheet.name : '';
+                    console.log('[visual-ext] FilterChanged on', wsName || ev && ev.worksheet);
+                    // FLICKER FIX: ignore FilterChanged on the hierarchy source
+                    // sheet — the filter ext never pushes the team filter there,
+                    // so this event carries no meaningful data change for the tree.
+                    if (_hierSourceSheetName && wsName === _hierSourceSheetName) return;
+                    debouncedFetch();
+                }));
                 unregisterHandlers.push(w.addEventListener(tableau.TableauEventType.MarkSelectionChanged, debouncedFetch));
                 try {
                     if (tableau.TableauEventType.SummaryDataChanged) {
@@ -2327,91 +2429,42 @@
                 // listeners we'd register here would leak (we already discarded
                 // their unregister fns above). Bail out instead.
                 if (myGen !== setupGeneration) return;
+                let syncParamFound = false;
                 params.forEach(p => {
+                    if (p.name === SYNC_PARAM_NAME) {
+                        // The filter extension's selection-change signal lives in
+                        // this parameter (the old settings-based channel never
+                        // crossed extension instances). It must NOT feed the
+                        // generic debouncedFetch — its transitions drive the
+                        // suppress/definitive-fetch orchestration instead.
+                        syncParamFound = true;
+                        handleSyncParamValue(p.currentValue && p.currentValue.value, true);
+                        unregisterHandlers.push(p.addEventListener(tableau.TableauEventType.ParameterChanged, (ev) => {
+                            // The Parameter object from getParametersAsync is a
+                            // snapshot — re-fetch it for the fresh value.
+                            ev.getParameterAsync()
+                                .then(param => handleSyncParamValue(param.currentValue && param.currentValue.value, false))
+                                .catch(e => console.warn('[visual-ext] sync param read failed:', e));
+                        }));
+                        return;
+                    }
                     unregisterHandlers.push(p.addEventListener(tableau.TableauEventType.ParameterChanged, debouncedFetch));
                 });
-            });
-
-            // Listen for the filter extension's selection-change signal:
-            // whenever it writes a new teamSelectionStamp + saveAsync, we
-            // collapse all and refetch. The FilterChanged events from its
-            // applyFilterAsync calls already trigger debouncedFetch, but this
-            // listener is what carries the "and collapse" intent.
-            try {
-                if (tableau.extensions.settings && typeof tableau.extensions.settings.addEventListener === 'function') {
-                    lastTeamSelectionStamp = tableau.extensions.settings.get('teamSelectionStamp') || null;
-                    const settingsUnreg = tableau.extensions.settings.addEventListener(
-                        tableau.TableauEventType.SettingsChanged,
-                        () => {
-                            const applyFlag = tableau.extensions.settings.get('filterApplyActive');
-                            if (applyFlag === '1') {
-                                // Filter extension is mid-apply (Phase 1 → Phase 2).
-                                // Suppress our FilterChanged-triggered fetches so we
-                                // don't fire 2-3 separate Snowflake queries per Apply
-                                // click. We'll do one final fetch when the flag clears.
-                                suppressedByFilterApply = true;
-                                suppressNextEventsFor(30000);
-                                // Filter extension confirmed running — cancel the
-                                // first-load fallback timer so it doesn't fire while
-                                // we wait for the single definitive post-apply fetch.
-                                if (_firstLoadPendingTimer) {
-                                    clearTimeout(_firstLoadPendingTimer);
-                                    _firstLoadPendingTimer = null;
-                                }
-                                return;
-                            }
-                            // Flag cleared → apply is fully done (or unrelated change).
-                            // If WE set the suppress, lift it now so the final fetch proceeds.
-                            if (suppressedByFilterApply) {
-                                suppressedByFilterApply = false;
-                                forceCollapseOnNextFetch = true;
-                                expandedNodes.clear();
-                                // BUG 1 FIX: sync lastTeamSelectionStamp NOW so the
-                                // normal SettingsChanged path never sees a stale stamp.
-                                // syncSelectionToSettings() wrote a new stamp during
-                                // Phase 2; because that SettingsChanged was swallowed by
-                                // the filterApplyActive='1' guard, lastTeamSelectionStamp
-                                // was never updated.  Without this, the very next
-                                // SettingsChanged (any saveAsync in any extension) would
-                                // see stamp !== lastTeamSelectionStamp and fire a second
-                                // debouncedFetch().
-                                lastTeamSelectionStamp = tableau.extensions.settings.get('teamSelectionStamp') || lastTeamSelectionStamp;
-                                pendingFetch = false;
-                                // BUG 2 FIX: use suppressNextEventsFor() (not a manual
-                                // suppressFetch=true) so it ALSO cancels any fetchTimeout
-                                // that was armed during the window between the 30 s timer
-                                // expiring and this path running.
-                                suppressNextEventsFor(45000);
-                                console.log('[visual-ext] filterApplyActive cleared → one definitive fetch, suppress extended 45 s');
-                                fetchDataAndRender();
-                                return;
-                            }
-                            // Normal SettingsChanged (no filter-apply suppress active):
-                            // re-render/refetch only when the team selection stamp changed.
-                            const stamp = tableau.extensions.settings.get('teamSelectionStamp');
-                            if (stamp && stamp !== lastTeamSelectionStamp) {
-                                lastTeamSelectionStamp = stamp;
-                                forceCollapseOnNextFetch = true;
-                                expandedNodes.clear();
-                                debouncedFetch();
-                            }
-                        }
-                    );
-                    unregisterHandlers.push(settingsUnreg);
+                if (!syncParamFound) {
+                    console.warn(`[visual-ext] workbook parameter "${SYNC_PARAM_NAME}" not found — filter-extension sync disabled. Team changes will refetch via FilterChanged only, and the fetch-signature cache cannot see team selections (stale-tree risk). Create a string parameter with that exact name.`);
                 }
-            } catch (e) {
-                console.warn('[visual-ext] SettingsChanged listener failed:', e);
-            }
+            });
 
             // On first load: wait for the filter extension to complete its
             // initial apply before fetching. This ensures exactly ONE fetch
             // with the correct scope (correct date window / team filter),
             // instead of an immediate stale fetch followed by a second
-            // post-apply fetch. The SettingsChanged listener above triggers
-            // fetchDataAndRender() when filterApplyActive clears.
+            // post-apply fetch. handleSyncParamValue() (driven by the
+            // 'Hierarchy Sync' ParameterChanged listener above) triggers
+            // fetchDataAndRender() when applyActive clears.
             //
-            // Fallback timer: if the filter extension never sets filterApplyActive
-            // within 15 seconds (absent, disabled, or misconfigured), fetch
+            // Fallback timer: if the filter extension never sets applyActive
+            // on the sync parameter (absent, disabled, or misconfigured), fetch
             // independently so the tree is not permanently blank.
             if (!hasLoadedOnce) {
                 // Fallback timer reduced 15 000 → 5 000 ms.  If the filter
@@ -3793,6 +3846,7 @@
                 // any cached tree. Also reset fieldNamesLoaded and rawDataCache
                 // so the new sheets' data is re-fetched cleanly.
                 lastDataSignature = null;
+                lastTeamExplicitPaths = null;
                 currentTree = {};
                 fieldNamesLoaded = false;
                 rawDataCache.clear();
@@ -3870,7 +3924,11 @@
                     getSetting('splitMetricsPrevSheet', 'Split - Metrics - Prev'),
                     getSetting('totalMetricsSheet', 'Total'),
                     getSetting('totalMetricsPrevSheet', 'Total - Prev'),
-                    'Leader Filter'
+                    // Leader Filter is the hierarchy picker source — the filter
+                    // ext never applies the tool filter to it, so probing it
+                    // for 'Selected Type' would always return null and waste a
+                    // getFiltersAsync round-trip.
+                    getSetting('leaderHierarchySheet', 'Leader Filter'),
                 ]);
                 const candidates = dashboard.worksheets.filter(w => w.name && !treeSourceSheets.has(w.name));
                 for (const ws of candidates) {
@@ -3905,24 +3963,40 @@
                 getSetting('splitMetricsPrevSheet', 'Split - Metrics - Prev'),
                 getSetting('totalMetricsSheet',     'Total'),
                 getSetting('totalMetricsPrevSheet', 'Total - Prev'),
-                'Leader Filter'
+                // Leader Filter is the hierarchy picker source — excluded from
+                // probe so its filter state never enters the cache signature.
+                // (The filter ext never writes team filters to it, so its
+                // getFiltersAsync output is always the unfiltered full domain.)
+                getSetting('leaderHierarchySheet',  'Leader Filter'),
             ]);
             const probe = dashboard.worksheets.find(w => w.name && !treeSourceNames.has(w.name));
-            const splitMetricsSheetName = getSetting('splitMetricsSheet', '');
-            const splitWsForTeam = splitMetricsSheetName
-                ? dashboard.worksheets.find(w => w.name === splitMetricsSheetName)
-                : null;
 
-            // Fire all three async reads in parallel — eliminates the serial
-            // getFiltersAsync round-trips that previously added 500ms–2s of
-            // pre-fetch latency on every filter change.
-            const [params, probeFilters, teamState] = await Promise.all([
+            // Fire the two async reads in parallel. The team selection is read
+            // from the 'Hierarchy Sync' parameter inside `params` below — NOT
+            // from tableau.extensions.settings ('teamExplicitPaths'), which is
+            // scoped per extension instance and therefore ALWAYS empty here
+            // (that dead read made team-only changes invisible to this
+            // signature → permanent false cache-hit → stale tree until reload).
+            // And NOT from readTeamFilterState → getFiltersAsync either, which
+            // can return the OLD filter state for a brief window after
+            // applyFilterAsync resolves (intermittent false cache-hit). The
+            // filter ext commits the parameter BEFORE calling applyFilterAsync,
+            // so by the time any resulting event lands here the new paths are
+            // already readable: race-free and costs no extra API call.
+            const [params, probeFilters] = await Promise.all([
                 dashboard.getParametersAsync().catch(() => []),
                 probe ? probe.getFiltersAsync().catch(() => []) : Promise.resolve([]),
-                readTeamFilterState(splitWsForTeam),
             ]);
 
             const parts = [];
+
+            // Team selection from the sync parameter (see comment above).
+            let teamPaths = '';
+            const syncP = params.find(p => p.name === SYNC_PARAM_NAME);
+            if (syncP) {
+                const sync = parseSyncParam(syncP.currentValue && syncP.currentValue.value);
+                if (sync && Array.isArray(sync.paths)) teamPaths = JSON.stringify(sync.paths);
+            }
 
             // Date parameters
             params.forEach(p => {
@@ -3953,10 +4027,14 @@
                 }
             });
 
-            // Team (L2-L9) filter state
-            if (teamState.signature) parts.push(`team=${teamState.signature}`);
+            // Include the authoritative parameter-based team sig. This changes
+            // the moment the filter ext commits the sync parameter (before
+            // applyFilterAsync), guaranteeing a cache miss on every real pick.
+            if (teamPaths) parts.push(`team=${teamPaths}`);
 
-            return parts.join('|');
+            // teamPaths is returned alongside so the fast-path guard can
+            // compare it independently of the joined signature.
+            return { sig: parts.join('|'), teamPaths };
         }
 
 
@@ -4086,12 +4164,20 @@
             }
 
             // Fast-path: signature short-circuit. If date params + tool
-            // selection are unchanged since the last fetch AND we have a
-            // built tree, skip the 4-sheet round-trip and just re-render.
+            // selection AND team selection are all unchanged since the last
+            // fetch AND we have a built tree, skip the 4-sheet round-trip
+            // and just re-render.
+            // The team paths come from the 'Hierarchy Sync' parameter (via
+            // computeFetchSignature) — checked separately so a team-only change
+            // (date/tool unchanged) always busts the cache, even if the main
+            // signature still matches (e.g. first pick after load where the
+            // team sig was never in the old signature format).
             try {
-                const sig = await computeFetchSignature(dashboard);
+                const { sig, teamPaths: currentTeamPaths } = await computeFetchSignature(dashboard);
                 tSigDone = performance.now();
-                if (sig && sig === lastDataSignature && currentTree && Object.keys(currentTree).length > 0) {
+                if (sig && sig === lastDataSignature
+                        && currentTeamPaths === lastTeamExplicitPaths
+                        && currentTree && Object.keys(currentTree).length > 0) {
                     console.log('[HierExt] fetch-skip: signature unchanged →', sig);
                     if (overlayEl) overlayEl.classList.remove('visible');
                     if (!isRefresh) { loadingEl.style.display = 'none'; toolbarEl.style.display = ''; }
@@ -4099,6 +4185,7 @@
                     return;
                 }
                 lastDataSignature = sig;
+                lastTeamExplicitPaths = currentTeamPaths;
             } catch (e) {
                 tSigDone = performance.now();
                 console.warn('[HierExt] signature computation failed; doing full fetch:', e);
@@ -4154,9 +4241,16 @@
                     if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Refreshing…';
                     tFetchStart = performance.now();
                     [splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable] = await Promise.all([
-                        splitWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }),
+                        // Option B: ignoreSelection:false on splitWs so the applyFilterAsync
+                        // L2 team filter from the filter extension is respected — only the
+                        // selected team's rows are returned from Snowflake.
+                        // totalWs keeps ignoreSelection:true — no L2 filter is applied to it,
+                        // it must return full data for correct Total column aggregation.
+                        // splitPrevWs / totalPrevWs are not configured (empty string in settings)
+                        // so they always resolve to null and never actually fetch.
+                        splitWs.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 }),
                         totalWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }),
-                        splitPrevWs ? splitPrevWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }) : Promise.resolve(null),
+                        splitPrevWs ? splitPrevWs.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 }) : Promise.resolve(null),
                         totalPrevWs ? totalPrevWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }) : Promise.resolve(null),
                     ]);
                     tFetchDone = performance.now();
@@ -5915,30 +6009,18 @@
             const activeUserMetricName = getSetting('activeUserColumn', '');
             const emailColName = getSetting('emailColumn', '');
 
-            // Build flat list of visible rows. Team-selection visibility
-            // filter (set by the sibling filter extension via the
-            // teamExplicitPaths setting) is applied here client-side so
-            // team-only changes don't require a Tableau refetch. The pick
-            // strings use '|' as separator (filter-extension convention);
-            // tree node paths use ' > '. Normalize to ' > ' for comparison.
-            let teamPickSet = null; // null = setting missing → no filter
-            try {
-                const raw = tableau.extensions.settings.get('teamExplicitPaths');
-                if (raw != null) {
-                    const arr = JSON.parse(raw);
-                    if (Array.isArray(arr)) {
-                        teamPickSet = new Set(arr.map(p =>
-                            typeof p === 'string' ? p.split('|').join(' > ') : ''
-                        ).filter(Boolean));
-                    }
-                }
-                console.log(`[HierExt] renderTable: teamPickSet=${teamPickSet === null ? 'null (no filter)' : '[' + Array.from(teamPickSet).join(', ') + ']'}`);
-            } catch (e) { /* leave teamPickSet null → show all */ }
+            // Option B: team filtering is handled entirely by applyFilterAsync on
+            // Split-Metrics (applied by the filter extension on every team selection).
+            // getSummaryDataAsync already returns only the selected team's rows, so
+            // the tree is pre-filtered at the Snowflake level — no client-side row
+            // scanning needed. teamPickSet stays null so every fetched node passes
+            // through flattenVisibleRows unconditionally, avoiding the O(nodes×picks)
+            // buildTeamFilterAncestors scan and the per-node set lookups on every render.
+            const teamPickSet = null;
+            console.log('[HierExt] renderTable: teamPickSet=null (Option B — filtered by applyFilterAsync on Split-Metrics)');
 
             const visibleRows = [];
-            // Precompute the ancestor index once per render so the per-node team
-            // filter check is O(1)/O(depth) instead of an O(picks) scan (Issue 4).
-            const teamFilterAncestors = buildTeamFilterAncestors(teamPickSet);
+            const teamFilterAncestors = null; // unused in Option B
             flattenVisibleRows(currentTree, 0, '', visibleRows, teamPickSet, teamFilterAncestors);
 
             // Create table
