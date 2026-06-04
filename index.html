@@ -438,6 +438,21 @@
             cursor: not-allowed;
         }
 
+        /* Expand all / Collapse all: highlighted after being clicked (cleared
+           when the user manually toggles a row). Highlight color configurable.
+           ID selectors so this outranks the #btn-expand-all/#btn-collapse-all
+           styling rules (plain .btn-secondary.bulk-active would always lose
+           the specificity contest against them and never show). */
+        #btn-expand-all.bulk-active, #btn-collapse-all.bulk-active {
+            background: var(--btn-active-bg, #667eea);
+            border-color: var(--btn-active-bg, #667eea);
+            color: #ffffff;
+        }
+        #btn-expand-all.bulk-active:hover, #btn-collapse-all.bulk-active:hover {
+            background: var(--btn-active-bg, #667eea);
+            filter: brightness(0.94);
+        }
+
         .btn-remove {
             width: 28px;
             height: 28px;
@@ -1032,7 +1047,14 @@
             text-transform: uppercase;
             padding: var(--cell-padding-v) var(--cell-padding-h);
             text-align: right;
-            white-space: nowrap;
+            /* Wrap long labels onto a second line instead of overflowing the
+               fixed-width column. nowrap made wide labels (and the [+]
+               toggle) spill past the cell — visually cut off by the next
+               column mid-table, and floating on blank wrapper space past the
+               table's right edge on the last column. */
+            white-space: normal;
+            overflow-wrap: break-word;
+            vertical-align: middle;
             border-bottom: 2px solid var(--border-color);
             user-select: none;
             cursor: pointer;
@@ -1047,6 +1069,31 @@
             background: var(--header-bg);
         }
 
+        /* Second header row (grouped two-row headers): its first cell is a
+           metric sub-header (e.g. TOTAL), NOT the leader column — the leader
+           th lives in row 1 with rowSpan=2. Undo the sticky-left treatment
+           that th:first-child gives it, so on horizontal scroll it slides
+           UNDER the TEAM column instead of over it. */
+        .data-table thead tr:nth-child(2) th:first-child {
+            left: auto;
+            z-index: 20;
+            text-align: right;
+            width: 150px;
+            min-width: 140px;
+            max-width: none;
+        }
+        /* …and restore the standard bottom-border ::after (the first-child
+           ::after is the right-edge shadow gradient of the leader column). */
+        .data-table thead tr:nth-child(2) th:first-child::after {
+            top: auto;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: auto;
+            height: 2px;
+            background: var(--border-color);
+        }
+
         .sort-icon {
             display: inline-block;
             margin-left: 6px;
@@ -1054,6 +1101,30 @@
             color: #a0aec0;
             transition: color 0.15s;
             vertical-align: middle;
+        }
+
+        /* +/− toggle on the Credit Usage header (provider split) */
+        .cu-split-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            margin-left: 6px;
+            border: 1px solid var(--border-color, #cbd5e0);
+            border-radius: 4px;
+            background: var(--row-bg, #ffffff);
+            color: var(--chevron-color, #667eea);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            user-select: none;
+            vertical-align: middle;
+        }
+        .cu-split-toggle:hover {
+            background: var(--chevron-color, #667eea);
+            color: #ffffff;
         }
 
         .data-table thead th:hover,
@@ -1174,7 +1245,10 @@
             height: 20px;
             border-radius: 4px;
             background: rgba(102, 126, 234, 0.08);
-            color: #667eea;
+            /* Tinted from the configurable chevron color where color-mix is
+               supported; the rgba line above is the fallback. */
+            background: color-mix(in srgb, var(--chevron-color, #667eea) 10%, transparent);
+            color: var(--chevron-color, #667eea);
             font-size: 8px;
             flex-shrink: 0;
             transition: transform 0.2s ease, background 0.15s;
@@ -1183,6 +1257,7 @@
 
         .tree-toggle:hover {
             background: rgba(102, 126, 234, 0.15);
+            background: color-mix(in srgb, var(--chevron-color, #667eea) 20%, transparent);
         }
 
         .tree-toggle.expanded {
@@ -1736,6 +1811,15 @@
                                 <input type="number" id="cfg-cell-padding-h" class="cfg-input" value="12" min="2" max="30">
                             </div>
                         </div>
+                        <div class="cfg-row" style="margin-top:10px">
+                            <div>
+                                <label class="cfg-label">Chevron Color</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-chevron-color" class="cfg-color-input" value="#667eea">
+                                    <input type="text" id="cfg-chevron-color-hex" class="cfg-color-hex" value="#667eea">
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="section-hier" style="margin-top:14px">
@@ -1830,6 +1914,13 @@
                                     <input type="text" id="cfg-btn-expand-border-hex" class="cfg-color-hex" value="#d4d8ff">
                                 </div>
                             </div>
+                            <div>
+                                <label class="cfg-label">Active Highlight</label>
+                                <div class="cfg-color-row">
+                                    <input type="color" id="cfg-btn-active-bg" class="cfg-color-input" value="#667eea">
+                                    <input type="text" id="cfg-btn-active-bg-hex" class="cfg-color-hex" value="#667eea">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1919,6 +2010,12 @@
         let hasLoadedOnce = false;    // true after first successful data render
         let activeSortCol = null;     // null, 'leader', or a metric displayName
         let activeSortDir = 'none';   // 'none', 'asc', 'desc'
+        // Provider split: per-provider Credit Usage columns are hidden behind
+        // a [+] toggle on each tool's Credit Usage header (default: only that
+        // tool's total credits show). Keyed by colDef.groupTool ('' in legacy
+        // flat provider mode). Pure render-side state — toggling re-renders
+        // from the already-built tree, no refetch.
+        const expandedCreditTools = new Set();
         let colDefs = [];            // Array of metric column definitions
         let hierarchyCols = [];      // Array of {level, idx, name}
         let allCurrentCols = [];     // All columns from current sheet (for config)
@@ -2208,6 +2305,8 @@
             root.style.setProperty('--btn-expand-color', getSetting('btnExpandColor', '#667eea'));
             root.style.setProperty('--btn-expand-bg', getSetting('btnExpandBg', '#eef0ff'));
             root.style.setProperty('--btn-expand-border', getSetting('btnExpandBorder', '#d4d8ff'));
+            root.style.setProperty('--btn-active-bg', getSetting('btnActiveBg', '#667eea'));
+            root.style.setProperty('--chevron-color', getSetting('chevronColor', '#667eea'));
             root.style.setProperty('--toolbar-bg', getSetting('toolbarBg', '#ffffff'));
         }
 
@@ -2275,6 +2374,14 @@
         // reads .paths out of it as the authoritative team signature.
         const SYNC_PARAM_NAME = 'Hierarchy Sync';
 
+        // 'Split Dimension' workbook parameter: drives the Dynamic Columns
+        // pivot in the workbook. There is no UI for it anymore — the workbook
+        // parks it at 'Provider' (which makes the calc emit combined
+        // 'Tool::Model' pivot values; see comboMode in fetchDataAndRender).
+        // It is still read into the fetch signature so a workbook-side flip
+        // busts the cache and the layout follows the data.
+        const SPLIT_DIM_PARAM_NAME = 'Split Dimension';
+
         function parseSyncParam(raw) {
             if (!raw || typeof raw !== 'string') return null;
             try {
@@ -2301,6 +2408,23 @@
             if (!sync) return;
             if (isInitial) {
                 lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : null;
+                // If the filter extension is already mid-apply when we start up
+                // (it writes applyActive='1' before its initial fetch), hold our
+                // first fetch for its definitive applyActive='' signal instead of
+                // letting the 5s fallback race it and render the worksheets'
+                // stale saved filter state (e.g. last session's single-leader
+                // pick). Re-arm the fallback at 30s rather than cancelling it
+                // outright: an applyActive='1' persisted into a saved workbook by
+                // a crashed session must not leave the tree blank forever.
+                if (sync.applyActive === '1' && !hasLoadedOnce) {
+                    suppressedByFilterApply = true;
+                    suppressNextEventsFor(30000);
+                    if (_firstLoadPendingTimer) clearTimeout(_firstLoadPendingTimer);
+                    _firstLoadPendingTimer = setTimeout(() => {
+                        _firstLoadPendingTimer = null;
+                        if (!hasLoadedOnce) fetchDataAndRender();
+                    }, 30000);
+                }
                 return;
             }
             if (sync.applyActive === '1') {
@@ -2561,6 +2685,7 @@
             setConfigColorValue('cfg-border-color', 'cfg-border-color-hex', 'borderColor', '#dde3ed');
             setConfigValue('cfg-cell-padding-v', 'cellPaddingV', '10');
             setConfigValue('cfg-cell-padding-h', 'cellPaddingH', '12');
+            setConfigColorValue('cfg-chevron-color', 'cfg-chevron-color-hex', 'chevronColor', '#667eea');
 
             // Hierarchy — default to All Collapsed so initial loads and
             // filter-extension-driven refetches start fully collapsed.
@@ -2579,11 +2704,12 @@
             setConfigColorValue('cfg-btn-expand-color', 'cfg-btn-expand-color-hex', 'btnExpandColor', '#667eea');
             setConfigColorValue('cfg-btn-expand-bg', 'cfg-btn-expand-bg-hex', 'btnExpandBg', '#eef0ff');
             setConfigColorValue('cfg-btn-expand-border', 'cfg-btn-expand-border-hex', 'btnExpandBorder', '#d4d8ff');
+            setConfigColorValue('cfg-btn-active-bg', 'cfg-btn-active-bg-hex', 'btnActiveBg', '#667eea');
 
             // Setup color syncs
             ['cfg-font-color', 'cfg-positive-color', 'cfg-negative-color', 'cfg-neutral-color',
                 'cfg-header-bg', 'cfg-header-font-color', 'cfg-row-bg', 'cfg-alt-row-bg',
-                'cfg-hover-bg', 'cfg-border-color',
+                'cfg-hover-bg', 'cfg-border-color', 'cfg-chevron-color', 'cfg-btn-active-bg',
                 'cfg-toolbar-bg',
                 'cfg-btn-expand-color', 'cfg-btn-expand-bg', 'cfg-btn-expand-border'].forEach(id => {
                     setupColorSync(id, id + '-hex');
@@ -3786,6 +3912,8 @@
             s.set('btnExpandColor', document.getElementById('cfg-btn-expand-color').value);
             s.set('btnExpandBg', document.getElementById('cfg-btn-expand-bg').value);
             s.set('btnExpandBorder', document.getElementById('cfg-btn-expand-border').value);
+            s.set('btnActiveBg', document.getElementById('cfg-btn-active-bg').value);
+            s.set('chevronColor', document.getElementById('cfg-chevron-color').value);
 
             // Prefix filter
             s.set('prefixFilter', document.getElementById('cfg-prefix-filter').value);
@@ -4006,6 +4134,18 @@
                     parts.push(`${p.name}=${v != null ? v.toString() : ''}`);
                 }
             });
+
+            // Split dimension — flipping Type ↔ Provider must bust the cache
+            // (the loop above only captures the date params by name). Also the
+            // cheapest place to refresh the cached value + dropdown: params
+            // are already in hand, and this runs at the top of every fetch,
+            // so downstream consumers (tool-filter intersection) see a fresh
+            // value without any extra API call.
+            const splitDimP = params.find(p => p.name === SPLIT_DIM_PARAM_NAME);
+            if (splitDimP) {
+                const v = splitDimP.currentValue && splitDimP.currentValue.value;
+                parts.push(`SplitDim=${v != null ? v.toString() : 'Type'}`);
+            }
 
             // Probe worksheet filters — read in ONE pass instead of two separate calls
             probeFilters.forEach(f => {
@@ -4424,13 +4564,47 @@
                         }
                         const allTools = Array.from(toolsSet).sort();
 
+                        // The workbook's Dynamic Columns calc emits combined
+                        // 'Tool::Model' pivot values (parameter parked at
+                        // 'Provider'). The extension keys the layout off the
+                        // DATA: combo values → per-tool columns with model
+                        // drill-in; plain values (calc flipped back to Type)
+                        // → the original flat per-tool layout. No UI switch.
+                        const SPLIT_COMBO_SEP = '::';
+                        const modelsByTool = {};
+                        let comboMode = false;
+                        allTools.forEach(v => {
+                            const si = v.indexOf(SPLIT_COMBO_SEP);
+                            if (si > 0) {
+                                comboMode = true;
+                                const tool = v.slice(0, si).trim();
+                                const model = v.slice(si + SPLIT_COMBO_SEP.length).trim() || 'Other';
+                                (modelsByTool[tool] = modelsByTool[tool] || []).push({ value: v, model });
+                            }
+                        });
+                        Object.values(modelsByTool).forEach(list =>
+                            list.sort((a, b) => a.model.localeCompare(b.model)));
+                        if (!comboMode && allTools.length > 0) {
+                            console.warn('[HierExt] pivot values carry no "::" tool prefix — rendering flat per-tool columns without model drill-in. Set the Split Dimension parameter to "Provider" and the Dynamic Columns calc to [Type] + "::" + IFNULL([Model], "Other").');
+                        }
+
                         // The user's tool pick comes from the Selected Type
                         // filter applied to every non-tree worksheet. When
                         // it's null (filter cleared / "all"), fall back to
-                        // showing every detected tool.
+                        // showing every detected tool. In combo mode the
+                        // intersection runs against the tool PREFIXES (the raw
+                        // 'Tool::Model' values never equal Type names).
                         const selectedToolValues = await readSelectedToolFilter(dashboard);
                         let detectedTools;
-                        if (selectedToolValues && selectedToolValues.length > 0) {
+                        if (comboMode) {
+                            let toolList = Object.keys(modelsByTool).sort();
+                            if (selectedToolValues && selectedToolValues.length > 0) {
+                                const sel = new Set(selectedToolValues.map(v => v.toString()));
+                                const filtered = toolList.filter(t => sel.has(t));
+                                if (filtered.length > 0) toolList = filtered;
+                            }
+                            detectedTools = toolList;
+                        } else if (selectedToolValues && selectedToolValues.length > 0) {
                             const sel = new Set(selectedToolValues.map(v => v.toString()));
                             detectedTools = allTools.filter(t => sel.has(t));
                             if (detectedTools.length === 0) detectedTools = allTools;
@@ -4446,10 +4620,65 @@
                         const isMultiTool = detectedTools.length > 1;
                         const singleTool = !isMultiTool && detectedTools.length > 0 ? detectedTools[0] : null;
 
+                        // Per-tool Active Users source: the 'Tool Active Users'
+                        // FIXED-LOD measure (exact distinct count per tool ×
+                        // org chain — constant across that tool's model rows,
+                        // read once per path via dedupeOncePerPath). If the
+                        // measure isn't on the Split sheet yet, fetchDataAndRender
+                        // patches these colDefs to an approximate model-sum
+                        // fallback after pivot detection (see toolAUAvailable).
+                        const splitToolAU = getSetting('splitToolActiveUsersCol', 'Tool Active Users');
 
                         // Build dynamic colDefs based on mode
                         let taColDefs;
-                        if (!isMultiTool) {
+                        if (comboMode) {
+                            // Nested mode. Per tool T, a Credit Usage group:
+                            //   `${T} Credit Usage` — group TOTAL, sums every
+                            //     'T::*' row via toolFilterPrefix; carries the
+                            //     [+] when the tool has model data.
+                            //   one col per model (exact 'T::M' toolFilter),
+                            //     hidden until the group is expanded.
+                            const cuGroupFor = (t) => {
+                                const models = modelsByTool[t] || [];
+                                return [
+                                    { displayName: `${t} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k',
+                                      toolFilterPrefix: t + SPLIT_COMBO_SEP, groupLabel: `${t} Credit Usage`, subLabel: 'TOTAL',
+                                      groupTool: t, hasProviders: models.length > 0 },
+                                    ...models.map(m => ({ displayName: `${t} ${m.model} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU,
+                                      type: 'number_k', toolFilter: m.value, groupLabel: `${t} Credit Usage`, subLabel: m.model, groupTool: t })),
+                                ];
+                            };
+                            if (isMultiTool) {
+                                // Consolidated model columns under Total Credit
+                                // Usage: one column per distinct model across
+                                // the selected tools, summing that model's rows
+                                // from every tool (toolFilterModel suffix match).
+                                const allModels = Array.from(new Set(
+                                    detectedTools.flatMap(t => (modelsByTool[t] || []).map(m => m.model))
+                                )).sort();
+                                taColDefs = [
+                                    { displayName: 'Total Active Users', sourceSheet: 'total', sourceCol: totalAU, type: 'number' },
+                                    ...detectedTools.map(t => ({ displayName: `${t} Active Users`, sourceSheet: 'split', sourceCol: splitToolAU,
+                                        type: 'number', toolFilterPrefix: t + SPLIT_COMBO_SEP, dedupeOncePerPath: true, isToolAU: true })),
+                                    { displayName: 'Total Credit Usage', sourceSheet: 'total', sourceCol: totalCU, type: 'number_k',
+                                      groupLabel: 'Total Credit Usage', subLabel: 'TOTAL', groupTool: '__total__', hasProviders: allModels.length > 0 },
+                                    ...allModels.map(m => ({ displayName: `Total ${m} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU,
+                                        type: 'number_k', toolFilterModel: m, groupLabel: 'Total Credit Usage', subLabel: m, groupTool: '__total__' })),
+                                    ...detectedTools.flatMap(cuGroupFor),
+                                ];
+                            } else {
+                                // Single tool selected: `${T} Active Users` +
+                                // `${T} Credit Usage [+]`. Active Users comes
+                                // from the Total sheet — with one tool in the
+                                // Type Set its measures ARE that tool's scope,
+                                // so the COUNTD is exact (no LOD dependency).
+                                const t = singleTool || 'Tool';
+                                taColDefs = [
+                                    { displayName: `${t} Active Users`, sourceSheet: 'total', sourceCol: totalAU, type: 'number' },
+                                    ...cuGroupFor(t),
+                                ];
+                            }
+                        } else if (!isMultiTool) {
                             const t = singleTool || 'Tool';
                             // toolFilter pins the merge to rows where Dynamic
                             // Columns matches the picked tool. Split-Metrics
@@ -4596,6 +4825,33 @@
                         const splitPivot = detectPivotCols(splitDataTable);
                         const totalPivot = detectPivotCols(totalDataTable);
 
+                        // Per-tool Active Users fallback: if the 'Tool Active
+                        // Users' LOD measure isn't on the Split sheet yet,
+                        // re-point those colDefs at the per-pivot-cell AU
+                        // measure and sum it (approximate: a person using two
+                        // models in the same tool counts once per model).
+                        if (comboMode && taColDefs.some(c => c.isToolAU)) {
+                            let toolAUAvailable;
+                            if (splitPivot.isPivot) {
+                                const mnSet = new Set();
+                                splitDataTable.data.forEach(r => {
+                                    const v = r[splitPivot.mnIdx]?.value;
+                                    if (v) mnSet.add(v.toString());
+                                });
+                                toolAUAvailable = Array.from(mnSet).some(mn => pivotMeasureMatches(mn, splitToolAU));
+                            } else {
+                                toolAUAvailable = findColIdx(splitDataTable.columns, splitToolAU) >= 0;
+                            }
+                            if (!toolAUAvailable) {
+                                taColDefs.forEach(c => {
+                                    if (c.isToolAU) {
+                                        c.sourceCol = splitAU;
+                                        delete c.dedupeOncePerPath;
+                                    }
+                                });
+                                console.warn(`[HierExt] "${splitToolAU}" measure not found on the Split sheet — per-tool Active Users falls back to summing per-model distinct counts (may overcount multi-model users). Add the LOD measure per the Tableau changes doc for exact counts.`);
+                            }
+                        }
 
                         // Tree source selection:
                         //   Pick the candidate whose data exposes the deepest hierarchy
@@ -4726,7 +4982,12 @@
                         // Sample a few paths to verify matching
                         const samplePaths = splitDataTable.data.slice(0, 3).map(r => computeLeafPath(r, splitHierCols));
 
-                        // Merge metrics from split data into tree nodes
+                        // Merge metrics from split data into tree nodes.
+                        // dedupeSeen: colDefs flagged dedupeOncePerPath (the
+                        // per-tool Active Users LOD — same value on every model
+                        // row of a tool × path) take their value from the FIRST
+                        // matching row only, instead of summing duplicates.
+                        const dedupeSeen = new Set();
                         splitDataTable.data.forEach(row => {
                             const path = computeLeafPath(row, splitHierCols);
                             if (!path) return;
@@ -4748,8 +5009,13 @@
                                 if (!measureName || isNaN(measureVal)) return;
                                 taColDefs.forEach(col => {
                                     if (col.sourceSheet !== 'split') return;
-                                    if (col.toolFilter && rowTool !== col.toolFilter) return;
+                                    if (!toolMatchesCol(col, rowTool)) return;
                                     if (!pivotMeasureMatches(measureName, col.sourceCol)) return;
+                                    if (col.dedupeOncePerPath) {
+                                        const k = path + '||' + col.displayName;
+                                        if (dedupeSeen.has(k)) return;
+                                        dedupeSeen.add(k);
+                                    }
                                     if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
                                     node.metrics[col.displayName] += measureVal;
                                 });
@@ -4757,11 +5023,16 @@
                                 // Non-pivot mode: one column per metric
                                 taColDefs.forEach(col => {
                                     if (col.sourceSheet !== 'split') return;
-                                    if (col.toolFilter && rowTool !== col.toolFilter) return;
+                                    if (!toolMatchesCol(col, rowTool)) return;
                                     const colIdx = splitColCache[col.sourceCol];
                                     if (colIdx === undefined || colIdx < 0) return;
                                     const v = parseFloat(row[colIdx]?.value);
                                     if (isNaN(v)) return;
+                                    if (col.dedupeOncePerPath) {
+                                        const k = path + '||' + col.displayName;
+                                        if (dedupeSeen.has(k)) return;
+                                        dedupeSeen.add(k);
+                                    }
                                     if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
                                     node.metrics[col.displayName] += v;
                                 });
@@ -5066,8 +5337,12 @@
                             // Dynamic Columns index in the prev split sheet (for per-tool filter matching)
                             const pSplitDynColIdx = splitPrevDataTable ? findColIdx(splitPrevDataTable.columns, dynColField) : -1;
 
-                            // Merge prev split rows
+                            // Merge prev split rows. pDedupeSeen mirrors the
+                            // current-period dedupe: once-per-path colDefs (the
+                            // per-tool Active Users LOD) read their prev value
+                            // from the first matching row only.
                             if (splitPrevDataTable) {
+                                const pDedupeSeen = new Set();
                                 splitPrevDataTable.data.forEach(row => {
                                     const path = computeLeafPath(row, pSplitHierCols);
                                     if (!path) return;
@@ -5087,20 +5362,30 @@
                                         if (!measureName || isNaN(measureVal)) return;
                                         taColDefs.forEach(col => {
                                             if (col.sourceSheet !== 'split') return;
-                                            if (col.toolFilter && rowTool !== col.toolFilter) return;
+                                            if (!toolMatchesCol(col, rowTool)) return;
                                             const matchedName = splitPrevResolved.get(col.displayName);
                                             if (!matchedName || measureName !== matchedName) return;
+                                            if (col.dedupeOncePerPath) {
+                                                const k = path + '||' + col.displayName;
+                                                if (pDedupeSeen.has(k)) return;
+                                                pDedupeSeen.add(k);
+                                            }
                                             if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
                                             node.metrics[col.displayName] += measureVal;
                                         });
                                     } else {
                                         taColDefs.forEach(col => {
                                             if (col.sourceSheet !== 'split') return;
-                                            if (col.toolFilter && rowTool !== col.toolFilter) return;
+                                            if (!toolMatchesCol(col, rowTool)) return;
                                             const colIdx = splitPrevResolved.get(col.displayName);
                                             if (colIdx === undefined || colIdx < 0) return;
                                             const v = parseFloat(row[colIdx]?.value);
                                             if (isNaN(v)) return;
+                                            if (col.dedupeOncePerPath) {
+                                                const k = path + '||' + col.displayName;
+                                                if (pDedupeSeen.has(k)) return;
+                                                pDedupeSeen.add(k);
+                                            }
                                             if (!node.metrics[col.displayName]) node.metrics[col.displayName] = 0;
                                             node.metrics[col.displayName] += v;
                                         });
@@ -5544,6 +5829,27 @@
             return parts.join(' > ');
         }
 
+        /** Merge predicate for split-sheet rows against a colDef's tool scope.
+         *  toolFilter        — exact pivot-value match (e.g. 'Windsurf::GPT-4o'
+         *                      or a plain 'Windsurf' in Type mode).
+         *  toolFilterPrefix  — startsWith match ('Windsurf::' aggregates every
+         *                      model row of that tool into one column).
+         *  toolFilterModel   — suffix match on the model part of 'Tool::Model'
+         *                      (consolidates the same model across tools, for
+         *                      the Total Credit Usage drill-in).
+         *  None set          — column accepts every row. */
+        function toolMatchesCol(col, rowTool) {
+            if (col.toolFilter) return rowTool === col.toolFilter;
+            if (col.toolFilterPrefix) return !!rowTool && rowTool.toString().startsWith(col.toolFilterPrefix);
+            if (col.toolFilterModel) {
+                if (!rowTool) return false;
+                const s = rowTool.toString();
+                const si = s.indexOf('::');
+                return si > 0 && s.slice(si + 2).trim() === col.toolFilterModel;
+            }
+            return true;
+        }
+
         /** Find column index in a data table by matching raw fieldName, bracketed form, cleaned name, or display name */
         function findColIdx(columns, targetName) {
             if (!targetName) return -1;
@@ -5593,15 +5899,52 @@
             });
         }
 
+        // Highlight whichever bulk button was used last; manual row toggles
+        // clear it (the tree is no longer fully expanded/collapsed then).
+        function setBulkActive(which) {
+            const ex = document.getElementById('btn-expand-all');
+            const co = document.getElementById('btn-collapse-all');
+            if (ex) ex.classList.toggle('bulk-active', which === 'expand');
+            if (co) co.classList.toggle('bulk-active', which === 'collapse');
+        }
+
         function expandAll() {
             const paths = [];
             collectAllParentPaths(currentTree, '', paths);
             paths.forEach(p => expandedNodes.add(p));
+            setBulkActive('expand');
             renderTable();
         }
 
         function collapseAll() {
             expandedNodes.clear();
+            setBulkActive('collapse');
+            renderTable();
+        }
+
+        // [+]/[−] on a tool's Credit Usage header (provider split). Render-
+        // only: the per-provider metrics are already in the tree, so toggling
+        // never refetches. When collapsing, drop an active sort on one of the
+        // group's now-hidden provider columns so the rows don't stay
+        // invisibly sorted by it.
+        function toggleCreditSplit(tool, e) {
+            if (e) e.stopPropagation();
+            const key = tool != null ? tool : '';
+            if (expandedCreditTools.has(key)) {
+                expandedCreditTools.delete(key);
+                if (activeSortCol && activeSortCol !== 'leader') {
+                    const hidden = new Set(
+                        colDefs.filter(c => (c.groupTool != null ? c.groupTool : '') === key
+                                            && c.subLabel && c.subLabel !== 'TOTAL')
+                               .map(c => c.displayName));
+                    if (hidden.has(activeSortCol)) {
+                        activeSortCol = null;
+                        activeSortDir = 'none';
+                    }
+                }
+            } else {
+                expandedCreditTools.add(key);
+            }
             renderTable();
         }
 
@@ -6006,6 +6349,38 @@
             const indent = parseInt(getSetting('indentPerLevel', '18'));
             const hasPrev = Object.keys(prevKeyMap).length > 0;
             const isSplitEnabled = getSetting('toolSplitEnabled', 'false') === 'true' && activeTools.length > 0;
+            // Grouped two-row header (provider split): driven by groupLabel
+            // tags on the colDefs themselves, not by activeTools. Never true
+            // in Type mode (those colDefs carry no groupLabel), so the Type
+            // render path is untouched.
+            const hasGroups = !isSplitEnabled && colDefs.some(c => c.groupLabel);
+            // Per-group expand state: a collapsed group renders only its TOTAL
+            // column, flattened to a single header carrying a [+] toggle; an
+            // expanded group renders the full grouped two-row header with its
+            // per-provider sub-columns and a [−] toggle. Groups are keyed by
+            // groupTool, so each tool's Credit Usage expands independently.
+            let displayColDefs = colDefs;
+            let groupedHeader = false;
+            if (hasGroups) {
+                displayColDefs = [];
+                colDefs.forEach(c => {
+                    if (!c.groupLabel) { displayColDefs.push(c); return; }
+                    const key = c.groupTool != null ? c.groupTool : '';
+                    if (expandedCreditTools.has(key)) { displayColDefs.push(c); return; }
+                    if (c.subLabel === 'TOTAL') {
+                        displayColDefs.push({
+                            ...c,
+                            headerLabel: (c.headerLabel && c.headerLabel !== c.displayName)
+                                ? c.headerLabel
+                                : (c.groupLabel || c.displayName),
+                            groupLabel: null,
+                            subLabel: null,
+                            expandToggle: !!c.hasProviders,
+                        });
+                    }
+                });
+                groupedHeader = displayColDefs.some(c => c.groupLabel);
+            }
             const activeUserMetricName = getSetting('activeUserColumn', '');
             const emailColName = getSetting('emailColumn', '');
 
@@ -6026,6 +6401,28 @@
             // Create table
             const table = document.createElement('table');
             table.className = 'data-table';
+
+            // Explicit <colgroup> for every colDef-driven render path.
+            // table-layout:fixed derives column widths from the FIRST header
+            // row — a colSpan group header would get a single column's width
+            // split across its sub-columns (≈11px each — the overlap bug),
+            // and without pinned widths the browser distributes leftover
+            // table width unevenly, leaving a blank band after the last
+            // labeled header. Pinned cols keep every column uniform; the
+            // table's width:100% then stretches them proportionally to fill
+            // the wrapper edge-to-edge.
+            if (!isSplitEnabled) {
+                const colgroup = document.createElement('colgroup');
+                const colLeader = document.createElement('col');
+                colLeader.style.width = '200px';
+                colgroup.appendChild(colLeader);
+                displayColDefs.forEach(() => {
+                    const c = document.createElement('col');
+                    c.style.width = '150px';
+                    colgroup.appendChild(c);
+                });
+                table.appendChild(colgroup);
+            }
 
             // Header
             const thead = document.createElement('thead');
@@ -6095,6 +6492,92 @@
 
                 thead.appendChild(row1);
                 thead.appendChild(row2);
+            } else if (groupedHeader) {
+                // Grouped two-row header driven by colDef groupLabel/subLabel
+                // metadata (provider split, EXPANDED state: single Active Users
+                // column + Credit Usage group spanning TOTAL + per-provider
+                // columns, with a [−] toggle to collapse back to TOTAL only).
+                // Body alignment: the flat body path renders one <td> per
+                // colDef, and rowSpan-2 cells + row-2 cells = colDefs count.
+                // (Column widths come from the shared <colgroup> above.)
+                const row1 = document.createElement('tr');
+                const row2 = document.createElement('tr');
+
+                const thLeader = document.createElement('th');
+                thLeader.id = 'header-leader';
+                thLeader.rowSpan = 2;
+                const isLeaderActive = (activeSortCol === 'leader');
+                if (isLeaderActive) thLeader.classList.add('active-sort');
+                const leaderIcon = isLeaderActive ? (activeSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+                thLeader.innerHTML = escHtml(leaderLabel) + `<span class="sort-icon">${leaderIcon}</span>`;
+                thLeader.addEventListener('click', () => handleSortClick('leader'));
+                row1.appendChild(thLeader);
+
+                // Sortable th factory shared by rowSpan-2 singles and row-2 subs.
+                const makeSortableTh = (col, label, idSuffix) => {
+                    const th = document.createElement('th');
+                    th.id = 'header-metric-' + idSuffix;
+                    const isColActive = (activeSortCol === col.displayName);
+                    if (isColActive) th.classList.add('active-sort');
+                    const icon = isColActive ? (activeSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+                    th.innerHTML = escHtml(label) + `<span class="sort-icon">${icon}</span>`;
+                    th.addEventListener('click', () => handleSortClick(col.displayName));
+                    return th;
+                };
+
+                // Walk colDefs in consecutive runs of the same groupLabel.
+                let gi = 0;
+                while (gi < displayColDefs.length) {
+                    const group = displayColDefs[gi].groupLabel || displayColDefs[gi].headerLabel || displayColDefs[gi].displayName;
+                    let runEnd = gi;
+                    while (runEnd + 1 < displayColDefs.length
+                            && (displayColDefs[runEnd + 1].groupLabel || displayColDefs[runEnd + 1].headerLabel || displayColDefs[runEnd + 1].displayName) === group) {
+                        runEnd++;
+                    }
+                    const run = displayColDefs.slice(gi, runEnd + 1);
+                    if (run.length === 1 && !run[0].subLabel) {
+                        // Single ungrouped column: one rowSpan-2 sortable
+                        // header, no row-2 cell. Honor a config-dialog rename
+                        // if one exists. A collapsed credit group flattened to
+                        // its TOTAL lands here too — it carries the [+].
+                        const col = run[0];
+                        const label = (col.headerLabel && col.headerLabel !== col.displayName)
+                            ? col.headerLabel
+                            : (col.groupLabel || col.headerLabel || col.displayName);
+                        const th = makeSortableTh(col, label, String(gi));
+                        th.rowSpan = 2;
+                        if (col.expandToggle) {
+                            const btn = document.createElement('span');
+                            btn.className = 'cu-split-toggle';
+                            btn.title = 'Expand provider split';
+                            btn.textContent = '+';
+                            btn.addEventListener('click', (e) => toggleCreditSplit(col.groupTool != null ? col.groupTool : '', e));
+                            th.appendChild(btn);
+                        }
+                        row1.appendChild(th);
+                    } else {
+                        // Group header spanning its sub-columns, with a [−]
+                        // toggle to collapse back to the TOTAL-only view.
+                        // The whole group header is clickable for collapse
+                        // (it carries no sort handler).
+                        const groupTool = run[0].groupTool != null ? run[0].groupTool : '';
+                        const thCat = document.createElement('th');
+                        thCat.id = 'header-metric-cat-' + gi;
+                        thCat.colSpan = run.length;
+                        thCat.style.textAlign = 'center';
+                        thCat.innerHTML = escHtml(group) + '<span class="cu-split-toggle" title="Collapse provider split">−</span>';
+                        thCat.addEventListener('click', (e) => toggleCreditSplit(groupTool, e));
+                        row1.appendChild(thCat);
+                        // …with one sortable sub-header per column in row 2.
+                        run.forEach((col, ri) => {
+                            row2.appendChild(makeSortableTh(col, col.subLabel || col.headerLabel || col.displayName, `${gi}-sub-${ri}`));
+                        });
+                    }
+                    gi = runEnd + 1;
+                }
+
+                thead.appendChild(row1);
+                thead.appendChild(row2);
             } else {
                 const headerRow = document.createElement('tr');
 
@@ -6109,7 +6592,7 @@
                 thLeader.addEventListener('click', () => handleSortClick('leader'));
                 headerRow.appendChild(thLeader);
 
-                colDefs.forEach((col, i) => {
+                displayColDefs.forEach((col, i) => {
                     const th = document.createElement('th');
                     th.id = 'header-metric-' + i;
                     const isColActive = (activeSortCol === col.displayName);
@@ -6119,6 +6602,17 @@
                     const colIcon = isColActive ? (activeSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
                     th.innerHTML = escHtml(col.headerLabel || col.displayName) + `<span class="sort-icon">${colIcon}</span>`;
                     th.addEventListener('click', () => handleSortClick(col.displayName));
+                    if (col.expandToggle) {
+                        // Collapsed provider split: [+] expands the per-provider
+                        // columns. stopPropagation inside toggleCreditSplit keeps
+                        // the click from also triggering this header's sort.
+                        const btn = document.createElement('span');
+                        btn.className = 'cu-split-toggle';
+                        btn.title = 'Expand provider split';
+                        btn.textContent = '+';
+                        btn.addEventListener('click', (e) => toggleCreditSplit(col.groupTool != null ? col.groupTool : '', e));
+                        th.appendChild(btn);
+                    }
                     headerRow.appendChild(th);
                 });
 
@@ -6140,7 +6634,7 @@
             table.appendChild(tbody);
 
             const makeRow = (rowData, i) => buildTableRow(
-                rowData, i, colDefs, prevKeyMap, indent,
+                rowData, i, displayColDefs, prevKeyMap, indent,
                 showToggle, isSplitEnabled, hasPrev,
                 activeUserMetricName, emailColName, showInitials
             );
@@ -6158,7 +6652,7 @@
             }
 
             // Dynamically calculate and set top position for Row 2 headers to handle sticky scrolling cleanly
-            if (isSplitEnabled) {
+            if (isSplitEnabled || groupedHeader) {
                 const firstRow = table.querySelector('thead tr:first-child');
                 const secondRow = table.querySelector('thead tr:nth-child(2)');
                 if (firstRow && secondRow) {
@@ -6299,6 +6793,7 @@
             } else {
                 expandedNodes.add(path);
             }
+            setBulkActive(null); // tree no longer uniformly expanded/collapsed
             renderTable();
         }
 
