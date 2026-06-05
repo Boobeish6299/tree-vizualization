@@ -3022,27 +3022,51 @@
             { totalKey: 'Total Credit Usage', toolSuffix: 'Credit Usage' }
         ];
 
+        /** Tool display-name + ordering contract for column layouts.
+         *  Headers use the display name (the raw 'Claude' data value renders
+         *  as 'Claude Code'), and tools always appear in the fixed business
+         *  order Gemini → Windsurf → Claude Code; any other tool value sorts
+         *  after those, alphabetically. Data matching/filtering (toolFilter,
+         *  toolFilterPrefix, groupTool) keeps the RAW data value — only
+         *  display strings go through toolDisplayName(). */
+        const TOOL_DISPLAY_NAMES = { claude: 'Claude Code' };
+        function toolDisplayName(t) {
+            return TOOL_DISPLAY_NAMES[t.toString().trim().toLowerCase()] || t;
+        }
+        const TOOL_COLUMN_ORDER = ['gemini', 'windsurf', 'claude'];
+        function sortToolsForDisplay(tools) {
+            const rank = (t) => {
+                const i = TOOL_COLUMN_ORDER.indexOf(t.toString().trim().toLowerCase());
+                return i >= 0 ? i : TOOL_COLUMN_ORDER.length;
+            };
+            return tools.slice().sort((a, b) =>
+                rank(a) - rank(b) || a.toString().localeCompare(b.toString()));
+        }
+
         /** Build the full ordered list of column keys for a given tool set.
          *  Multi-tool: all Totals first in metric order, then per-tool columns
-         *  grouped by metric (all tools' Active Users, then all tools' Credit
-         *  Usage, etc.). Single-tool: just the per-tool entries in metric order. */
+         *  grouped BY TOOL (each tool's Active Users then Credit Usage) in
+         *  the fixed sortToolsForDisplay order. Single-tool: just the per-tool
+         *  entries in metric order. Keys use toolDisplayName so they match
+         *  the colDef displayNames built in fetchDataAndRender. */
         function buildColDisplayFlatDefaults(tools) {
             const out = [];
+            const ordered = sortToolsForDisplay(tools);
             const multi = tools.length > 1;
             if (multi) {
                 COL_DISPLAY_FAMILIES.forEach(f => {
                     out.push({ key: f.totalKey, label: f.totalKey, visible: true });
                 });
-                COL_DISPLAY_FAMILIES.forEach(f => {
-                    tools.forEach(t => {
-                        const k = `${t} ${f.toolSuffix}`;
+                ordered.forEach(t => {
+                    COL_DISPLAY_FAMILIES.forEach(f => {
+                        const k = `${toolDisplayName(t)} ${f.toolSuffix}`;
                         out.push({ key: k, label: k, visible: true });
                     });
                 });
             } else if (tools.length === 1) {
-                const t = tools[0];
+                const t = ordered[0];
                 COL_DISPLAY_FAMILIES.forEach(f => {
-                    const k = `${t} ${f.toolSuffix}`;
+                    const k = `${toolDisplayName(t)} ${f.toolSuffix}`;
                     out.push({ key: k, label: k, visible: true });
                 });
             }
@@ -3191,9 +3215,9 @@
 
             // Columns missing from the saved config fall back to their taColDefs
             // position (offset by 9999 so they sort after any configured entry).
-            // This preserves the canonical "all Totals first, then per-tool grouped
-            // by metric" layout defined by taColDefs whenever the saved config is
-            // stale or partial.
+            // This preserves the canonical "Totals first, then per-tool pairs
+            // grouped by tool" layout defined by taColDefs whenever the saved
+            // config is stale or partial.
             function resolveOrder(col, fallbackIdx) {
                 if (col.displayName in orderMap) return orderMap[col.displayName];
                 return 9999 + fallbackIdx;
@@ -4645,11 +4669,15 @@
                         } else {
                             detectedTools = allTools;
                         }
+                        // Fixed business column order (Gemini → Windsurf →
+                        // Claude Code, extras after) regardless of how the
+                        // tools were detected above.
+                        detectedTools = sortToolsForDisplay(detectedTools);
 
                         // Mode is now driven by SELECTED tool count, not by
                         // every tool in Split-Metrics: single-tool pick → only
-                        // that tool's columns; multi-tool pick → Total +
-                        // per-tool columns grouped by metric.
+                        // that tool's columns; multi-tool pick → Totals first,
+                        // then per-tool column pairs grouped by tool.
                         const totalAUIdx = findColIdx(totalDataTable.columns, totalAU);
                         const isMultiTool = detectedTools.length > 1;
                         const singleTool = !isMultiTool && detectedTools.length > 0 ? detectedTools[0] : null;
@@ -4674,12 +4702,13 @@
                             //     hidden until the group is expanded.
                             const cuGroupFor = (t) => {
                                 const models = modelsByTool[t] || [];
+                                const td = toolDisplayName(t);
                                 return [
-                                    { displayName: `${t} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k',
-                                      toolFilterPrefix: t + SPLIT_COMBO_SEP, groupLabel: `${t} Credit Usage`, subLabel: 'TOTAL',
+                                    { displayName: `${td} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k',
+                                      toolFilterPrefix: t + SPLIT_COMBO_SEP, groupLabel: `${td} Credit Usage`, subLabel: 'TOTAL',
                                       groupTool: t, hasProviders: models.length > 0 },
-                                    ...models.map(m => ({ displayName: `${t} ${m.model} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU,
-                                      type: 'number_k', toolFilter: m.value, groupLabel: `${t} Credit Usage`, subLabel: m.model, groupTool: t })),
+                                    ...models.map(m => ({ displayName: `${td} ${m.model} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU,
+                                      type: 'number_k', toolFilter: m.value, groupLabel: `${td} Credit Usage`, subLabel: m.model, groupTool: t })),
                                 ];
                             };
                             if (isMultiTool) {
@@ -4690,15 +4719,21 @@
                                 const allModels = Array.from(new Set(
                                     detectedTools.flatMap(t => (modelsByTool[t] || []).map(m => m.model))
                                 )).sort();
+                                // Layout: Total Active Users, Total Credit Usage
+                                // (group), then per-tool pairs grouped BY TOOL —
+                                // each tool's Active Users followed by its Credit
+                                // Usage group, in detectedTools' fixed order.
                                 taColDefs = [
                                     { displayName: 'Total Active Users', sourceSheet: 'total', sourceCol: totalAU, type: 'number' },
-                                    ...detectedTools.map(t => ({ displayName: `${t} Active Users`, sourceSheet: 'split', sourceCol: splitToolAU,
-                                        type: 'number', toolFilterPrefix: t + SPLIT_COMBO_SEP, dedupeOncePerPath: true, isToolAU: true })),
                                     { displayName: 'Total Credit Usage', sourceSheet: 'total', sourceCol: totalCU, type: 'number_k',
                                       groupLabel: 'Total Credit Usage', subLabel: 'TOTAL', groupTool: '__total__', hasProviders: allModels.length > 0 },
                                     ...allModels.map(m => ({ displayName: `Total ${m} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU,
                                         type: 'number_k', toolFilterModel: m, groupLabel: 'Total Credit Usage', subLabel: m, groupTool: '__total__' })),
-                                    ...detectedTools.flatMap(cuGroupFor),
+                                    ...detectedTools.flatMap(t => [
+                                        { displayName: `${toolDisplayName(t)} Active Users`, sourceSheet: 'split', sourceCol: splitToolAU,
+                                          type: 'number', toolFilterPrefix: t + SPLIT_COMBO_SEP, dedupeOncePerPath: true, isToolAU: true },
+                                        ...cuGroupFor(t),
+                                    ]),
                                 ];
                             } else {
                                 // Single tool selected: `${T} Active Users` +
@@ -4708,7 +4743,7 @@
                                 // so the COUNTD is exact (no LOD dependency).
                                 const t = singleTool || 'Tool';
                                 taColDefs = [
-                                    { displayName: `${t} Active Users`, sourceSheet: 'total', sourceCol: totalAU, type: 'number' },
+                                    { displayName: `${toolDisplayName(t)} Active Users`, sourceSheet: 'total', sourceCol: totalAU, type: 'number' },
                                     ...cuGroupFor(t),
                                 ];
                             }
@@ -4721,17 +4756,21 @@
                             // would include every tool's rows even when only
                             // one is "selected".
                             taColDefs = [
-                                { displayName: `${t} Active Users`, sourceSheet: 'split', sourceCol: splitAU, type: 'number',   toolFilter: t },
-                                { displayName: `${t} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k', toolFilter: t },
+                                { displayName: `${toolDisplayName(t)} Active Users`, sourceSheet: 'split', sourceCol: splitAU, type: 'number',   toolFilter: t },
+                                { displayName: `${toolDisplayName(t)} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k', toolFilter: t },
                             ];
                         } else {
-                            // Layout: Totals first (Active Users, Credit Usage), then per-tool
-                            // columns grouped by metric in the same order.
+                            // Layout: Totals first (Active Users, Credit Usage),
+                            // then per-tool pairs grouped BY TOOL (each tool's
+                            // Active Users followed by its Credit Usage) in
+                            // detectedTools' fixed order.
                             taColDefs = [
                                 { displayName: 'Total Active Users', sourceSheet: 'total', sourceCol: totalAU, type: 'number'   },
                                 { displayName: 'Total Credit Usage', sourceSheet: 'total', sourceCol: totalCU, type: 'number_k' },
-                                ...detectedTools.map(t => ({ displayName: `${t} Active Users`, sourceSheet: 'split', sourceCol: splitAU, type: 'number',   toolFilter: t })),
-                                ...detectedTools.map(t => ({ displayName: `${t} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k', toolFilter: t })),
+                                ...detectedTools.flatMap(t => [
+                                    { displayName: `${toolDisplayName(t)} Active Users`, sourceSheet: 'split', sourceCol: splitAU, type: 'number',   toolFilter: t },
+                                    { displayName: `${toolDisplayName(t)} Credit Usage`, sourceSheet: 'split', sourceCol: splitCU, type: 'number_k', toolFilter: t },
+                                ]),
                             ];
                         }
                         // Apply column display settings: rename headers, reorder groups, hide toggled-off columns
