@@ -1016,12 +1016,14 @@
             table-layout: fixed;
         }
 
-        /* TEAM column: fixed width — never shrinks or grows out of bounds */
+        /* TEAM column: width follows the deepest visible hierarchy level
+           (set per render via --leader-col-width) so deeply indented names
+           (L6-L7) stay readable instead of ellipsizing into the indent. */
         .data-table td:first-child,
         .data-table th:first-child {
-            width: 200px;
+            width: var(--leader-col-width, 200px);
             min-width: 160px;
-            max-width: 240px;
+            max-width: var(--leader-col-width, 240px);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -4734,7 +4736,36 @@
                         }
                         // Apply column display settings: rename headers, reorder groups, hide toggled-off columns
                         // Note: taColDefs stays unmodified for data merge below; colDefs is the display-facing version
-                        colDefs = applyColDisplaySettings(taColDefs, isMultiTool, detectedTools);
+                        //
+                        // regroup: applyColDisplaySettings sorts by the saved
+                        // colDisplayConfig order, which only knows the top-level
+                        // column names — the model sub-columns fall back to
+                        // order 9999+ and land at the END, FRAGMENTING their
+                        // group (e.g. Total Credit Usage's TOTAL at its saved
+                        // position but its models after every other column,
+                        // with stray group headers in between). Keep each
+                        // credit group atomic: all members are emitted together
+                        // at the position of the group's first member (its
+                        // anchor per the user's configured order), TOTAL first.
+                        // Reordering the anchor in Configure now moves the
+                        // whole group as a unit.
+                        const regroupColDefs = (defs) => {
+                            const emitted = new Set();
+                            const out = [];
+                            const keyOf = (c) => (c.groupTool != null ? c.groupTool : '') + '||' + c.groupLabel;
+                            defs.forEach(c => {
+                                if (!c.groupLabel) { out.push(c); return; }
+                                const key = keyOf(c);
+                                if (emitted.has(key)) return;
+                                emitted.add(key);
+                                const members = defs.filter(d => d.groupLabel && keyOf(d) === key);
+                                members.sort((a, b) =>
+                                    (a.subLabel === 'TOTAL' ? 0 : 1) - (b.subLabel === 'TOTAL' ? 0 : 1));
+                                out.push(...members);
+                            });
+                            return out;
+                        };
+                        colDefs = regroupColDefs(applyColDisplaySettings(taColDefs, isMultiTool, detectedTools));
                         activeTools = [];
 
                         // Detect hierarchy columns DIRECTLY from splitDataTable and totalDataTable.
@@ -6446,6 +6477,16 @@
             const visibleRows = [];
             flattenVisibleRows(currentTree, 0, '', visibleRows, teamPickSet, teamFilterAncestors);
 
+            // TEAM column width follows the deepest VISIBLE row: expanding to
+            // L6-L7 widens the column (base 200px + per-level indent + row
+            // chrome) so deep names render instead of ellipsizing into the
+            // indent. Recomputed on every render — collapsing shrinks it back.
+            // Capped so the sticky column can't swallow the viewport; the
+            // table itself scrolls horizontally when total width grows.
+            const maxVisibleDepth = visibleRows.reduce((m, r) => r.depth > m ? r.depth : m, 0);
+            const leaderColWidth = Math.min(200 + maxVisibleDepth * indent + 40, 480);
+            container.style.setProperty('--leader-col-width', leaderColWidth + 'px');
+
             // Create table
             const table = document.createElement('table');
             table.className = 'data-table';
@@ -6462,7 +6503,7 @@
             if (!isSplitEnabled) {
                 const colgroup = document.createElement('colgroup');
                 const colLeader = document.createElement('col');
-                colLeader.style.width = '200px';
+                colLeader.style.width = leaderColWidth + 'px';
                 colgroup.appendChild(colLeader);
                 displayColDefs.forEach(() => {
                     const c = document.createElement('col');
