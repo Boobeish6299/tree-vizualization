@@ -5558,7 +5558,11 @@
                             collectAllParentPaths(currentTree, '', validPathsArr);
                             const validPaths = new Set(validPathsArr);
                             expandedNodes.forEach(p => { if (!validPaths.has(p)) expandedNodes.delete(p); });
-                            if (hasLoadedOnce) initializeExpandedState(currentTree, 0);
+                            if (hasLoadedOnce) {
+                                initializeExpandedState(currentTree, 0);
+                            } else {
+                                autoExpandToTeamPicks();
+                            }
                             hasLoadedOnce = true;
                             _cachedParentPaths = null; // invalidate on new data
                             if (overlayEl) overlayEl.classList.remove('visible');
@@ -6724,10 +6728,14 @@
                         // regardless of the configured defaultExpandLevel.
                         expandedNodes.clear();
                         forceCollapseOnNextFetch = false;
+                        autoExpandToTeamPicks();
                     } else if (hasLoadedOnce) {
                         // Subsequent refreshes (filter/param changes): restore expansion
                         // state up to the configured defaultExpandLevel.
                         initializeExpandedState(currentTree, 0);
+                    } else {
+                        // First load: auto-expand to show active team filter picks
+                        autoExpandToTeamPicks();
                     }
                     // First load always starts fully collapsed regardless of saved defaultExpandLevel.
                     hasLoadedOnce = true;
@@ -7167,6 +7175,26 @@
                     initializeExpandedState(node.children, currentDepth + 1);
                 }
             });
+        }
+
+        /** Auto-expand the table to show the selected team members */
+        function autoExpandToTeamPicks() {
+            if (lastTeamExplicitPaths) {
+                try {
+                    const arr = JSON.parse(lastTeamExplicitPaths);
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        arr.forEach(p => {
+                            const parts = p.toString().split('|').map(s => s.trim());
+                            // Add ancestor paths to expandedNodes so the selected node is visible.
+                            // For a path of length N, we add the first N-1 prefix paths.
+                            for (let i = 1; i < parts.length; i++) {
+                                const ancestorPath = parts.slice(0, i).join(' > ');
+                                expandedNodes.add(ancestorPath);
+                            }
+                        });
+                    }
+                } catch (_) {}
+            }
         }
 
         /** Compute the composite path for a given node (for expand state tracking) */
