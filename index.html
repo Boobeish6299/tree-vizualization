@@ -1480,6 +1480,200 @@
         tr.sk-l2 td:first-child { padding-left: 12px; }
         tr.sk-l3 td:first-child { padding-left: 30px; }
         tr.sk-l4 td:first-child { padding-left: 48px; }
+
+        /* ================================================================
+           KPI TILES
+           ================================================================ */
+        #kpi-tiles-container {
+            padding: 16px 24px 0;
+            flex-shrink: 0;
+        }
+        #kpi-tiles-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .kpi-tile {
+            flex: 1;
+            min-width: 180px;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            border-top: 3.5px solid var(--kpi-accent, #3b82f6);
+            padding: 18px 20px 16px;
+            text-align: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            transition: box-shadow 0.2s, transform 0.15s;
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-tile:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            transform: translateY(-1px);
+        }
+        .kpi-tile-title {
+            font-size: var(--kpi-title-size, 12px);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--kpi-title-color, #5a6a85);
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+        .kpi-tile-value {
+            font-size: var(--kpi-value-size, 28px);
+            font-weight: 700;
+            color: var(--kpi-accent, #3b82f6);
+            line-height: 1.2;
+            margin-bottom: 6px;
+            font-variant-numeric: tabular-nums;
+        }
+        .kpi-tile-delta {
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.3;
+            transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.25s ease;
+            max-height: 40px;
+            opacity: 1;
+            overflow: hidden;
+        }
+        .kpi-tile-delta.kpi-positive {
+            color: var(--kpi-positive-color, #2ecc71);
+        }
+        .kpi-tile-delta.kpi-negative {
+            color: var(--kpi-negative-color, #e74c3c);
+        }
+        .kpi-tile-delta.kpi-neutral {
+            color: var(--kpi-neutral-color, #f39c12);
+        }
+
+        /* ── Global trend-hidden: hides deltas in BOTH KPI tiles and tree table ── */
+        .trend-hidden .kpi-tile-delta {
+            max-height: 0;
+            opacity: 0;
+            margin-bottom: 0;
+            margin-top: 0;
+        }
+        .trend-hidden .metric-delta {
+            display: none !important;
+        }
+
+        /* ================================================================
+           SHOW TREND TOGGLE (iOS style)
+           ================================================================ */
+        #kpi-trend-toggle-wrap {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 10px 0 4px;
+        }
+        .kpi-toggle-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .kpi-toggle-text {
+            font-size: 12px;
+            font-weight: 600;
+            color: #5a6a85;
+            letter-spacing: 0.02em;
+        }
+        .kpi-toggle-track {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            display: inline-block;
+        }
+        .kpi-toggle-track input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .kpi-toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: #cbd5e0;
+            border-radius: 12px;
+            transition: background 0.25s ease;
+            cursor: pointer;
+        }
+        .kpi-toggle-slider::before {
+            content: '';
+            position: absolute;
+            left: 3px;
+            top: 3px;
+            width: 16px;
+            height: 16px;
+            background: #ffffff;
+            border-radius: 50%;
+            transition: transform 0.25s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .kpi-toggle-track input:checked + .kpi-toggle-slider {
+            background: #667eea;
+        }
+        .kpi-toggle-track input:checked + .kpi-toggle-slider::before {
+            transform: translateX(18px);
+        }
+
+        /* ── KPI Config Section (inside wizard) ── */
+        .kpi-config-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .kpi-config-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 14px 16px;
+            background: #f7fafc;
+            position: relative;
+        }
+        .kpi-config-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .kpi-config-card-num {
+            font-size: 10px;
+            font-weight: 700;
+            color: #667eea;
+            background: #eef0ff;
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+        .kpi-config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 12px;
+        }
+        .kpi-config-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px 12px;
+        }
+        .kpi-config-full {
+            grid-column: 1 / -1;
+        }
+        .kpi-color-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .kpi-color-swatch {
+            width: 28px;
+            height: 28px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 1px;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 
@@ -1598,6 +1792,38 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ── KPI Tiles Configuration ──────────────────────────────── -->
+            <div class="step-divider">📊 KPI Tiles</div>
+            <p class="cfg-hint">Add dashboard-top KPI tiles sourced from Tableau worksheets. Each tile shows a primary value. Metric-type tiles can show comparison data from a second worksheet (controlled by the Show Trend toggle).</p>
+
+            <!-- Global KPI Delta Colors -->
+            <div class="cfg-row-3" style="margin-bottom: 12px;">
+                <div>
+                    <label class="cfg-label">Positive Delta Color</label>
+                    <div class="kpi-color-row">
+                        <input type="color" id="cfg-kpi-positive-color" class="kpi-color-swatch" value="#2ecc71">
+                        <input type="text" id="cfg-kpi-positive-color-hex" class="cfg-color-hex" value="#2ecc71" style="flex:1">
+                    </div>
+                </div>
+                <div>
+                    <label class="cfg-label">Negative Delta Color</label>
+                    <div class="kpi-color-row">
+                        <input type="color" id="cfg-kpi-negative-color" class="kpi-color-swatch" value="#e74c3c">
+                        <input type="text" id="cfg-kpi-negative-color-hex" class="cfg-color-hex" value="#e74c3c" style="flex:1">
+                    </div>
+                </div>
+                <div>
+                    <label class="cfg-label">Neutral Delta Color</label>
+                    <div class="kpi-color-row">
+                        <input type="color" id="cfg-kpi-neutral-color" class="kpi-color-swatch" value="#f39c12">
+                        <input type="text" id="cfg-kpi-neutral-color-hex" class="cfg-color-hex" value="#f39c12" style="flex:1">
+                    </div>
+                </div>
+            </div>
+
+            <div id="kpi-tiles-config-list" class="kpi-config-cards"></div>
+            <button class="btn-secondary" onclick="addKpiTileConfig()">+ Add KPI Tile</button>
 
             <!-- Backward-compat hidden selects (section-data) -->
             <div id="section-data" style="display:none">
@@ -1978,6 +2204,20 @@
             <span>Initializing extension…</span>
         </div>
 
+        <!-- KPI Tiles -->
+        <div id="kpi-tiles-container" style="display: none;">
+            <div id="kpi-tiles-row"></div>
+            <div id="kpi-trend-toggle-wrap">
+                <label class="kpi-toggle-label">
+                    <span class="kpi-toggle-text">Show Trend</span>
+                    <div class="kpi-toggle-track">
+                        <input type="checkbox" id="kpi-trend-toggle">
+                        <span class="kpi-toggle-slider"></span>
+                    </div>
+                </label>
+            </div>
+        </div>
+
         <div id="tree-toolbar" style="display: none; padding: 12px 24px; align-items: center; gap: 12px; flex-shrink: 0;">
             <button id="btn-expand-all" class="btn-secondary" style="margin-top: 0;" onclick="expandAll()">Expand all</button>
             <button id="btn-collapse-all" class="btn-secondary" style="margin-top: 0;" onclick="collapseAll()">Collapse all</button>
@@ -2050,6 +2290,422 @@
         const rawDataCache   = new Map();  // sig → { tables, timestamp }
         const RAW_CACHE_TTL  = 20 * 60 * 1000; // 20 min — doubled to cover longer working sessions
         const RAW_CACHE_MAX  = 16;              // 16 entries — covers more date-range combos
+
+        /* ================================================================
+           KPI TILES ENGINE
+           ================================================================ */
+        let kpiTileConfigs = [];  // Array of tile config objects
+        let kpiTileResults = [];  // Last-fetched tile data
+
+        /** Format a KPI value based on its type */
+        function formatKpiValue(val, fmt) {
+            if (val === null || val === undefined) return '—';
+            switch (fmt) {
+                case 'number':   return Math.round(val).toLocaleString();
+                case 'number_k': return formatK(val);
+                case 'percent':  return val.toFixed(1) + '%';
+                case 'currency': return '$' + Math.round(val).toLocaleString();
+                case 'text':     return String(val);
+                default:         return String(val);
+            }
+        }
+
+        /* ── KPI Config UI functions ─────────────────────────────────────── */
+
+        /** Render a single KPI tile config card in the wizard */
+        function renderOneKpiTileConfig(tile, idx) {
+            const esc = escHtml;
+            const wsOpts = (availableWorksheets || []).map(n =>
+                `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+            const fmtOpts = ['number', 'number_k', 'percent', 'currency', 'text'].map(f =>
+                `<option value="${f}"${tile.format === f ? ' selected' : ''}>${f}</option>`).join('');
+            const isMetric = tile.type !== 'label';
+
+            return `
+            <div class="kpi-config-card" data-kpi-id="${esc(tile.id)}">
+                <div class="kpi-config-card-header">
+                    <span class="kpi-config-card-num">TILE ${idx + 1}</span>
+                    <button class="btn-remove" onclick="removeKpiTileConfig('${esc(tile.id)}')" title="Remove tile">×</button>
+                </div>
+
+                <div class="kpi-config-grid">
+                    <div class="kpi-config-full">
+                        <label class="cfg-label">Tile Title</label>
+                        <input type="text" class="cfg-input kpi-cfg-title" value="${esc(tile.title || '')}" placeholder="e.g. Active Users">
+                    </div>
+                    <div>
+                        <label class="cfg-label">Type</label>
+                        <select class="cfg-select kpi-cfg-type" onchange="onKpiTypeChange(this)">
+                            <option value="metric"${isMetric ? ' selected' : ''}>Metric (value + delta)</option>
+                            <option value="label"${!isMetric ? ' selected' : ''}>Label (text value)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="cfg-label">Value Format</label>
+                        <select class="cfg-select kpi-cfg-format">${fmtOpts}</select>
+                    </div>
+                    <div>
+                        <label class="cfg-label">Current Worksheet</label>
+                        <select class="cfg-select kpi-cfg-current-ws" onchange="onKpiWsChange(this, 'current')">
+                            <option value="">— Select Worksheet —</option>${wsOpts}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="cfg-label">Value Column</label>
+                        <select class="cfg-select kpi-cfg-value-col">
+                            <option value="">— Select Column —</option>
+                        </select>
+                    </div>
+                    <div class="kpi-prev-section" style="display:${isMetric ? '' : 'none'}">
+                        <label class="cfg-label">Previous Period Worksheet</label>
+                        <select class="cfg-select kpi-cfg-prev-ws" onchange="onKpiWsChange(this, 'prev')">
+                            <option value="">— None —</option>${wsOpts}
+                        </select>
+                    </div>
+                    <div class="kpi-prev-section" style="display:${isMetric ? '' : 'none'}">
+                        <label class="cfg-label">Previous Value Column</label>
+                        <select class="cfg-select kpi-cfg-prev-col">
+                            <option value="">— Select Column —</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Design Options -->
+                <div style="margin-top: 10px;">
+                    <label class="cfg-label" style="margin-top:6px">Design Options</label>
+                    <div class="kpi-config-grid-3">
+                        <div>
+                            <label class="cfg-label">Border / Accent Color</label>
+                            <div class="kpi-color-row">
+                                <input type="color" class="kpi-color-swatch kpi-cfg-accent" value="${tile.accentColor || '#3b82f6'}">
+                                <input type="text" class="cfg-color-hex kpi-cfg-accent-hex" value="${tile.accentColor || '#3b82f6'}" style="flex:1">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="cfg-label">Title Font Color</label>
+                            <div class="kpi-color-row">
+                                <input type="color" class="kpi-color-swatch kpi-cfg-title-color" value="${tile.titleColor || '#5a6a85'}">
+                                <input type="text" class="cfg-color-hex kpi-cfg-title-color-hex" value="${tile.titleColor || '#5a6a85'}" style="flex:1">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="cfg-label">Title Font Size (px)</label>
+                            <input type="number" class="cfg-input kpi-cfg-title-size" value="${tile.titleFontSize || 12}" min="8" max="20">
+                        </div>
+                        <div>
+                            <label class="cfg-label">Value Font Size (px)</label>
+                            <input type="number" class="cfg-input kpi-cfg-value-size" value="${tile.valueFontSize || 28}" min="14" max="48">
+                        </div>
+                        <div>
+                            <label class="cfg-label">Value Font Color</label>
+                            <div class="kpi-color-row">
+                                <input type="color" class="kpi-color-swatch kpi-cfg-value-color" value="${tile.valueColor || tile.accentColor || '#3b82f6'}">
+                                <input type="text" class="cfg-color-hex kpi-cfg-value-color-hex" value="${tile.valueColor || tile.accentColor || '#3b82f6'}" style="flex:1">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="cfg-label">Border Style</label>
+                            <select class="cfg-select kpi-cfg-border-style">
+                                <option value="solid"${(tile.borderStyle || 'solid') === 'solid' ? ' selected' : ''}>Solid</option>
+                                <option value="dashed"${tile.borderStyle === 'dashed' ? ' selected' : ''}>Dashed</option>
+                                <option value="dotted"${tile.borderStyle === 'dotted' ? ' selected' : ''}>Dotted</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        /** Render all KPI tile config cards */
+        function renderAllKpiTileConfigs() {
+            const container = document.getElementById('kpi-tiles-config-list');
+            if (!container) return;
+            container.innerHTML = kpiTileConfigs.map((t, i) => renderOneKpiTileConfig(t, i)).join('');
+
+            // Setup color syncs within each card
+            container.querySelectorAll('.kpi-config-card').forEach(card => {
+                const pairs = [
+                    ['.kpi-cfg-accent', '.kpi-cfg-accent-hex'],
+                    ['.kpi-cfg-title-color', '.kpi-cfg-title-color-hex'],
+                    ['.kpi-cfg-value-color', '.kpi-cfg-value-color-hex'],
+                ];
+                pairs.forEach(([colorSel, hexSel]) => {
+                    const colorEl = card.querySelector(colorSel);
+                    const hexEl = card.querySelector(hexSel);
+                    if (colorEl && hexEl) {
+                        colorEl.addEventListener('input', () => { hexEl.value = colorEl.value; });
+                        hexEl.addEventListener('input', () => {
+                            if (/^#[0-9A-Fa-f]{6}$/.test(hexEl.value)) colorEl.value = hexEl.value;
+                        });
+                    }
+                });
+            });
+
+            // Restore saved worksheet selections & load columns
+            kpiTileConfigs.forEach((tile, i) => {
+                const card = container.querySelectorAll('.kpi-config-card')[i];
+                if (!card) return;
+                if (tile.currentSheet) {
+                    const curWs = card.querySelector('.kpi-cfg-current-ws');
+                    curWs.value = tile.currentSheet;
+                    populateKpiColSelect(card.querySelector('.kpi-cfg-value-col'), tile.currentSheet, tile.valueCol);
+                }
+                if (tile.prevSheet) {
+                    const prevWs = card.querySelector('.kpi-cfg-prev-ws');
+                    prevWs.value = tile.prevSheet;
+                    populateKpiColSelect(card.querySelector('.kpi-cfg-prev-col'), tile.prevSheet, tile.prevValueCol);
+                }
+            });
+        }
+
+        function addKpiTileConfig() {
+            kpiTileConfigs.push({
+                id: 'kpi_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                title: '',
+                type: 'metric',
+                currentSheet: '',
+                valueCol: '',
+                prevSheet: '',
+                prevValueCol: '',
+                format: 'number',
+                accentColor: '#3b82f6',
+                titleColor: '#5a6a85',
+                titleFontSize: 12,
+                valueFontSize: 28,
+                valueColor: '#3b82f6',
+                borderStyle: 'solid',
+            });
+            renderAllKpiTileConfigs();
+        }
+
+        function removeKpiTileConfig(id) {
+            kpiTileConfigs = kpiTileConfigs.filter(t => t.id !== id);
+            renderAllKpiTileConfigs();
+        }
+
+        function onKpiTypeChange(selectEl) {
+            const card = selectEl.closest('.kpi-config-card');
+            const isMetric = selectEl.value === 'metric';
+            card.querySelectorAll('.kpi-prev-section').forEach(el => {
+                el.style.display = isMetric ? '' : 'none';
+            });
+        }
+
+        async function onKpiWsChange(selectEl, which) {
+            const card = selectEl.closest('.kpi-config-card');
+            const colSelect = which === 'current'
+                ? card.querySelector('.kpi-cfg-value-col')
+                : card.querySelector('.kpi-cfg-prev-col');
+            const wsName = selectEl.value;
+            populateKpiColSelect(colSelect, wsName, '');
+        }
+
+        async function populateKpiColSelect(selectEl, wsName, savedValue) {
+            if (!selectEl) return;
+            selectEl.innerHTML = '<option value="">— Select Column —</option>';
+            if (!wsName) return;
+            try {
+                const dashboard = tableau.extensions.dashboardContent.dashboard;
+                const ws = dashboard.worksheets.find(w => w.name === wsName);
+                if (!ws) return;
+                const dt = await ws.getSummaryDataAsync({ ignoreSelection: true, maxRows: 1 });
+                dt.columns.forEach(col => {
+                    const name = getFieldDisplayName ? getFieldDisplayName(col.fieldName) : col.fieldName;
+                    const opt = document.createElement('option');
+                    opt.value = col.fieldName;
+                    opt.textContent = name;
+                    if (col.fieldName === savedValue) opt.selected = true;
+                    selectEl.appendChild(opt);
+                });
+            } catch (e) {
+                console.warn('[KPI] failed to load columns for', wsName, e);
+            }
+        }
+
+        /** Collect KPI tile configs from the config UI DOM */
+        function collectKpiTileConfigsFromDom() {
+            const result = [];
+            const cards = document.querySelectorAll('#kpi-tiles-config-list .kpi-config-card');
+            cards.forEach(card => {
+                result.push({
+                    id: card.dataset.kpiId,
+                    title: card.querySelector('.kpi-cfg-title')?.value || '',
+                    type: card.querySelector('.kpi-cfg-type')?.value || 'metric',
+                    currentSheet: card.querySelector('.kpi-cfg-current-ws')?.value || '',
+                    valueCol: card.querySelector('.kpi-cfg-value-col')?.value || '',
+                    prevSheet: card.querySelector('.kpi-cfg-prev-ws')?.value || '',
+                    prevValueCol: card.querySelector('.kpi-cfg-prev-col')?.value || '',
+                    format: card.querySelector('.kpi-cfg-format')?.value || 'number',
+                    accentColor: card.querySelector('.kpi-cfg-accent')?.value || '#3b82f6',
+                    titleColor: card.querySelector('.kpi-cfg-title-color')?.value || '#5a6a85',
+                    titleFontSize: parseInt(card.querySelector('.kpi-cfg-title-size')?.value) || 12,
+                    valueFontSize: parseInt(card.querySelector('.kpi-cfg-value-size')?.value) || 28,
+                    valueColor: card.querySelector('.kpi-cfg-value-color')?.value || '#3b82f6',
+                    borderStyle: card.querySelector('.kpi-cfg-border-style')?.value || 'solid',
+                });
+            });
+            return result;
+        }
+
+        /* ── KPI Data Fetching ───────────────────────────────────────────── */
+
+        async function fetchKpiTileData() {
+            const tilesStr = getSetting('kpiTiles', '[]');
+            let tiles;
+            try { tiles = JSON.parse(tilesStr); } catch (e) { tiles = []; }
+            if (!tiles.length) return [];
+
+            const dashboard = tableau.extensions.dashboardContent.dashboard;
+            const results = [];
+
+            // Fetch all worksheets in parallel
+            const fetchPromises = tiles.map(async tile => {
+                const result = {
+                    id: tile.id,
+                    title: tile.title,
+                    type: tile.type,
+                    format: tile.format,
+                    accentColor: tile.accentColor || '#3b82f6',
+                    titleColor: tile.titleColor || '#5a6a85',
+                    titleFontSize: tile.titleFontSize || 12,
+                    valueFontSize: tile.valueFontSize || 28,
+                    valueColor: tile.valueColor || tile.accentColor || '#3b82f6',
+                    borderStyle: tile.borderStyle || 'solid',
+                    value: null,
+                    prevValue: null,
+                    delta: null,
+                    deltaPercent: null,
+                };
+
+                try {
+                    // Fetch current value
+                    if (tile.currentSheet) {
+                        const ws = dashboard.worksheets.find(w => w.name === tile.currentSheet);
+                        if (ws) {
+                            const dt = await ws.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
+                            if (dt && dt.data.length > 0) {
+                                const colIdx = findColIdx(dt.columns, tile.valueCol);
+                                if (colIdx >= 0) {
+                                    const rawVal = dt.data[0][colIdx]?.value;
+                                    result.value = tile.format === 'text' ? rawVal : parseFloat(rawVal);
+                                }
+                            }
+                        }
+                    }
+
+                    // Fetch previous value (only for metric type)
+                    if (tile.type === 'metric' && tile.prevSheet && tile.prevValueCol) {
+                        const prevWs = dashboard.worksheets.find(w => w.name === tile.prevSheet);
+                        if (prevWs) {
+                            const dt = await prevWs.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
+                            if (dt && dt.data.length > 0) {
+                                const colIdx = findColIdx(dt.columns, tile.prevValueCol);
+                                if (colIdx >= 0) {
+                                    const rawVal = dt.data[0][colIdx]?.value;
+                                    result.prevValue = parseFloat(rawVal);
+                                }
+                            }
+                        }
+                    }
+
+                    // Compute delta
+                    if (tile.type === 'metric' && result.value != null && result.prevValue != null
+                        && !isNaN(result.value) && !isNaN(result.prevValue)) {
+                        result.delta = result.value - result.prevValue;
+                        if (result.prevValue !== 0) {
+                            result.deltaPercent = ((result.delta) / Math.abs(result.prevValue)) * 100;
+                        } else {
+                            result.deltaPercent = result.value > 0 ? 100 : (result.value < 0 ? -100 : 0);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[KPI] fetch error for tile', tile.title, e);
+                }
+
+                return result;
+            });
+
+            return Promise.all(fetchPromises);
+        }
+
+        /* ── KPI Tile Rendering ──────────────────────────────────────────── */
+
+        function renderKpiTiles(results) {
+            const container = document.getElementById('kpi-tiles-container');
+            const row = document.getElementById('kpi-tiles-row');
+            if (!container || !row) return;
+
+            if (!results || results.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+
+            container.style.display = '';
+            row.innerHTML = results.map(r => {
+                const esc = escHtml;
+                const formattedValue = formatKpiValue(r.value, r.format);
+                let deltaHtml = '';
+
+                if (r.type === 'metric' && r.delta !== null && r.delta !== undefined) {
+                    const isPositive = r.delta > 0;
+                    const isNeutral = r.delta === 0;
+                    const cssClass = isNeutral ? 'kpi-neutral' : (isPositive ? 'kpi-positive' : 'kpi-negative');
+                    const arrow = isNeutral ? '—' : (isPositive ? '▲' : '▼');
+                    const absDelta = formatKpiValue(Math.abs(r.delta), r.format);
+                    const pctStr = (r.deltaPercent !== null && r.deltaPercent !== undefined)
+                        ? ` (${r.deltaPercent >= 0 ? '+' : ''}${r.deltaPercent.toFixed(1)}%)`
+                        : '';
+                    deltaHtml = `<div class="kpi-tile-delta ${cssClass}">${arrow} ${esc(absDelta)}${pctStr}</div>`;
+                }
+
+                return `<div class="kpi-tile" style="
+                    --kpi-accent: ${r.accentColor};
+                    --kpi-title-color: ${r.titleColor};
+                    --kpi-title-size: ${r.titleFontSize}px;
+                    --kpi-value-size: ${r.valueFontSize}px;
+                    border-top-style: ${r.borderStyle};
+                ">
+                    <div class="kpi-tile-title">${esc(r.title)}</div>
+                    <div class="kpi-tile-value" style="color: ${r.valueColor}">${esc(formattedValue)}</div>
+                    ${deltaHtml}
+                </div>`;
+            }).join('');
+
+            // Apply the KPI delta colors from settings
+            const root = document.documentElement;
+            root.style.setProperty('--kpi-positive-color', getSetting('kpiPositiveColor', '#2ecc71'));
+            root.style.setProperty('--kpi-negative-color', getSetting('kpiNegativeColor', '#e74c3c'));
+            root.style.setProperty('--kpi-neutral-color', getSetting('kpiNeutralColor', '#f39c12'));
+        }
+
+        /* ── Show Trend Toggle ───────────────────────────────────────────── */
+
+        function initTrendToggle() {
+            const toggle = document.getElementById('kpi-trend-toggle');
+            if (!toggle) return;
+            const isOn = getSetting('kpiShowTrend', 'false') === 'true';
+            toggle.checked = isOn;
+            applyTrendVisibility(isOn);
+
+            toggle.addEventListener('change', () => {
+                const checked = toggle.checked;
+                applyTrendVisibility(checked);
+                // Persist to settings
+                tableau.extensions.settings.set('kpiShowTrend', checked ? 'true' : 'false');
+                tableau.extensions.settings.saveAsync().catch(e =>
+                    console.warn('[KPI] failed to persist trend toggle:', e));
+            });
+        }
+
+        function applyTrendVisibility(show) {
+            const mainUi = document.getElementById('main-ui');
+            if (!mainUi) return;
+            if (show) {
+                mainUi.classList.remove('trend-hidden');
+            } else {
+                mainUi.classList.add('trend-hidden');
+            }
+        }
 
         /* ================================================================
            FORMATTING UTILITIES
@@ -2274,6 +2930,7 @@
                 return;
             }
             applyStyles();
+            initTrendToggle();
             setupEventListenersAndFetch();
         }).catch(err => {
             const loadingEl = document.getElementById('loading');
@@ -2320,6 +2977,11 @@
             root.style.setProperty('--btn-active-bg', getSetting('btnActiveBg', '#667eea'));
             root.style.setProperty('--chevron-color', getSetting('chevronColor', '#667eea'));
             root.style.setProperty('--toolbar-bg', getSetting('toolbarBg', '#ffffff'));
+
+            // KPI Tile delta colors
+            root.style.setProperty('--kpi-positive-color', getSetting('kpiPositiveColor', '#2ecc71'));
+            root.style.setProperty('--kpi-negative-color', getSetting('kpiNegativeColor', '#e74c3c'));
+            root.style.setProperty('--kpi-neutral-color', getSetting('kpiNeutralColor', '#f39c12'));
         }
 
         /* ================================================================
@@ -2872,6 +3534,22 @@
                 // Populate Multi-Tool select options
                 populateMultiToolSelectors();
             });
+
+            // ── KPI Tiles Config ──
+            try {
+                kpiTileConfigs = JSON.parse(getSetting('kpiTiles', '[]'));
+            } catch (e) {
+                kpiTileConfigs = [];
+            }
+            renderAllKpiTileConfigs();
+
+            // KPI Delta Colors
+            setConfigColorValue('cfg-kpi-positive-color', 'cfg-kpi-positive-color-hex', 'kpiPositiveColor', '#2ecc71');
+            setConfigColorValue('cfg-kpi-negative-color', 'cfg-kpi-negative-color-hex', 'kpiNegativeColor', '#e74c3c');
+            setConfigColorValue('cfg-kpi-neutral-color', 'cfg-kpi-neutral-color-hex', 'kpiNeutralColor', '#f39c12');
+            ['cfg-kpi-positive-color', 'cfg-kpi-negative-color', 'cfg-kpi-neutral-color'].forEach(id => {
+                setupColorSync(id, id + '-hex');
+            });
         }
 
         function setConfigValue(elId, settingKey, fallback) {
@@ -3232,6 +3910,26 @@
                 return { ...col, headerLabel, _visible: visible, _order: order };
             });
 
+            // A credit group's rename is keyed by its TOTAL anchor's
+            // displayName (the only member the Column Display panel knows).
+            // Propagate the custom label to every member's groupLabel so the
+            // rename also shows on the EXPANDED two-row group header, which
+            // renders groupLabel — not headerLabel. Renaming all members
+            // consistently keeps the header's consecutive-run grouping and
+            // regroupColDefs' group keys intact.
+            const groupRenames = {};
+            const groupKeyOf = (c) => (c.groupTool != null ? c.groupTool : '') + '||' + c.groupLabel;
+            tagged.forEach(c => {
+                if (c.groupLabel && c.subLabel === 'TOTAL' && c.headerLabel !== c.displayName) {
+                    groupRenames[groupKeyOf(c)] = c.headerLabel;
+                }
+            });
+            tagged.forEach(c => {
+                if (c.groupLabel && groupRenames[groupKeyOf(c)] !== undefined) {
+                    c.groupLabel = groupRenames[groupKeyOf(c)];
+                }
+            });
+
             // Filter out hidden columns
             let visible = tagged.filter(c => c._visible);
 
@@ -3317,7 +4015,20 @@
                                 toolsSet.add(val.toString());
                             }
                         });
-                        configDetectedTools = Array.from(toolsSet).sort();
+                        // Combo mode ('Tool::Model' pivot values): the Column
+                        // Display panel works at TOOL level, so reduce combo
+                        // values to their tool prefixes. The panel's keys must
+                        // match the colDef displayNames built in
+                        // fetchDataAndRender (e.g. 'Gemini Credit Usage'),
+                        // never the raw 'Tool::Model' strings — raw combo keys
+                        // make applyColDisplaySettings silently ignore every
+                        // saved rename/reorder/hide.
+                        const toolNames = new Set();
+                        toolsSet.forEach(v => {
+                            const si = v.indexOf('::');
+                            toolNames.add((si > 0 ? v.slice(0, si) : v).trim());
+                        });
+                        configDetectedTools = sortToolsForDisplay(Array.from(toolNames));
                     }
                 }
             } catch(e) {
@@ -4020,10 +4731,17 @@
             // Column Display Settings (order, rename, visibility)
             s.set('colDisplayConfig', getColDisplayConfigJson());
 
+            // KPI Tiles
+            s.set('kpiTiles', JSON.stringify(collectKpiTileConfigsFromDom()));
+            s.set('kpiPositiveColor', document.getElementById('cfg-kpi-positive-color')?.value || '#2ecc71');
+            s.set('kpiNegativeColor', document.getElementById('cfg-kpi-negative-color')?.value || '#e74c3c');
+            s.set('kpiNeutralColor', document.getElementById('cfg-kpi-neutral-color')?.value || '#f39c12');
+
             s.saveAsync().then(() => {
                 document.getElementById('config-ui').style.display = 'none';
                 document.getElementById('main-ui').style.display = 'flex';
                 applyStyles();
+                initTrendToggle();
                 expandedNodes.clear();
                 activeSortCol = null;
                 activeSortDir = 'none';
@@ -5589,6 +6307,12 @@
                 tBuildDone = performance.now();
                 renderTable();
                 tRenderDone = performance.now();
+
+                // Fetch and render KPI tiles (non-blocking — tree renders first)
+                fetchKpiTileData().then(kpiResults => {
+                    kpiTileResults = kpiResults;
+                    renderKpiTiles(kpiResults);
+                }).catch(e => console.warn('[KPI] tile fetch error:', e));
 
                 // ── Performance summary ───────────────────────────────────────
                 // Open DevTools console to see where your seconds go.
