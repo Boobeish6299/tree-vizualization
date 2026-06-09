@@ -2574,6 +2574,13 @@
         let activeTools = [];
         let emailColIdx = -1;
 
+        function parseKpiValue(s) {
+            if (s === undefined || s === null) return null;
+            s = s.toString().trim();
+            if (s === '' || s === '—' || s === 'N/A' || s === 'NA') return null;
+            return s;
+        }
+
         // ── Raw DataTable cache ─────────────────────────────────────────────────
         // Caches the four fetched DataTables keyed by filter signature.
         // When the user changes a filter and returns to a previous state
@@ -2597,7 +2604,7 @@
             if (str === null || str === undefined) return null;
             if (typeof str === 'number') return str;
             let s = String(str).trim();
-            if (s === '' || s === '—' || s === 'N/A') return null;
+            if (s === '' || s === '—' || s === 'N/A' || s === 'NA') return null;
 
             let multiplier = 1;
             // Remove internal whitespaces
@@ -2643,7 +2650,7 @@
 
         /** Format a KPI value based on its type */
         function formatKpiValue(val, fmt, rawVal) {
-            if (val === null || val === undefined) return '—';
+            if (val === null || val === undefined) return 'N/A';
             switch (fmt) {
                 case 'number': return typeof val === 'number' ? Math.round(val).toLocaleString() : String(val);
                 case 'number_k': return typeof val === 'number' ? formatKpiK(val) : String(val);
@@ -3085,7 +3092,7 @@
         }
 
         function formatValue(val, type) {
-            if (val === null || val === undefined || isNaN(val)) return '—';
+            if (val === null || val === undefined || isNaN(val)) return 'N/A';
             switch (type) {
                 case 'number': return formatNumber(val);
                 case 'number_k': return formatK(val);
@@ -5631,11 +5638,24 @@
                     const leaderDataTable = null;
 
                     if (!splitDataTable || splitDataTable.data.length === 0) {
-                        if (!isRefresh) {
-                            loadingEl.innerHTML = '<div class="empty-state"><div class="icon">📭</div><div class="message">No data found</div><div class="hint">The Split Metrics worksheet returned no rows.</div></div>';
-                            document.getElementById('tree-container').innerHTML = '';
-                        }
+                        // Hide loading indicators
                         if (overlayEl) overlayEl.classList.remove('visible');
+                        loadingEl.style.display = 'none';
+
+                        // Hide KPI tiles since there's no data
+                        const kpiCont = document.getElementById('kpi-tiles-container');
+                        if (kpiCont) kpiCont.style.display = 'none';
+
+                        // Show empty state message in tree-container
+                        const treeCont = document.getElementById('tree-container');
+                        if (treeCont) {
+                            treeCont.innerHTML = '<div class="empty-state"><div class="icon">📭</div><div class="message">No data found</div><div class="hint">The Split Metrics worksheet returned no rows for the selected filters.</div></div>';
+                        }
+                        
+                        // Ensure toolbar is visible so the user can configure or see settings
+                        const toolbarEl = document.getElementById('tree-toolbar');
+                        if (toolbarEl) toolbarEl.style.display = 'flex';
+
                         return;
                     }
 
