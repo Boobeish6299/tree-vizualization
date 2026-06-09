@@ -2297,15 +2297,64 @@
         let kpiTileConfigs = [];  // Array of tile config objects
         let kpiTileResults = [];  // Last-fetched tile data
 
+        /** Parse a formatted Tableau cell value to a number, handling K/M/B suffixes, commas, and currency symbols */
+        function parseTableauNumericValue(str) {
+            if (str === null || str === undefined) return null;
+            if (typeof str === 'number') return str;
+            let s = String(str).trim();
+            if (s === '' || s === '—' || s === 'N/A') return null;
+
+            let multiplier = 1;
+            // Remove internal whitespaces
+            s = s.replace(/\s+/g, '');
+
+            // Detect suffixes like K, M, B, G, %
+            const upper = s.toUpperCase();
+            if (upper.endsWith('K')) {
+                multiplier = 1000;
+                s = s.slice(0, -1);
+            } else if (upper.endsWith('M')) {
+                multiplier = 1000000;
+                s = s.slice(0, -1);
+            } else if (upper.endsWith('B') || upper.endsWith('G')) {
+                multiplier = 1000000000;
+                s = s.slice(0, -1);
+            } else if (upper.endsWith('%')) {
+                s = s.slice(0, -1);
+            }
+
+            // Remove commas and currency symbols
+            s = s.replace(/,/g, '').replace(/[\$\€\£\¥]/g, '');
+
+            const parsed = parseFloat(s);
+            if (isNaN(parsed)) return null;
+            return parsed * multiplier;
+        }
+
+        /** Format numbers to K, M, B with up to two decimal places for KPI tiles */
+        function formatKpiK(val) {
+            const abs = Math.abs(val);
+            if (abs >= 1000000000) {
+                return (val / 1000000000).toFixed(2).replace(/\.00$/, '').replace(/(\.[0-9])0$/, '$1') + 'B';
+            }
+            if (abs >= 1000000) {
+                return (val / 1000000).toFixed(2).replace(/\.00$/, '').replace(/(\.[0-9])0$/, '$1') + 'M';
+            }
+            if (abs >= 1000) {
+                return (val / 1000).toFixed(2).replace(/\.00$/, '').replace(/(\.[0-9])0$/, '$1') + 'K';
+            }
+            return Math.round(val).toLocaleString();
+        }
+
         /** Format a KPI value based on its type */
-        function formatKpiValue(val, fmt) {
+        function formatKpiValue(val, fmt, rawVal) {
             if (val === null || val === undefined) return '—';
             switch (fmt) {
-                case 'number':   return Math.round(val).toLocaleString();
-                case 'number_k': return formatK(val);
-                case 'percent':  return val.toFixed(1) + '%';
-                case 'currency': return '$' + Math.round(val).toLocaleString();
-                case 'text':     return String(val);
+                case 'number':   return typeof val === 'number' ? Math.round(val).toLocaleString() : String(val);
+                case 'number_k': return typeof val === 'number' ? formatKpiK(val) : String(val);
+                case 'percent':  return typeof val === 'number' ? val.toFixed(1) + '%' : String(val);
+                case 'currency': return typeof val === 'number' ? '$' + Math.round(val).toLocaleString() : String(val);
+                case 'text':     return (rawVal !== undefined && rawVal !== null) ? String(rawVal) : (typeof val === 'number' ? formatKpiK(val) : String(val));
                 default:         return String(val);
             }
         }
@@ -2572,7 +2621,9 @@
                     valueColor: tile.valueColor || tile.accentColor || '#3b82f6',
                     borderStyle: tile.borderStyle || 'solid',
                     value: null,
+                    rawValue: null,
                     prevValue: null,
+                    prevRawValue: null,
                     delta: null,
                     deltaPercent: null,
                 };
@@ -2587,7 +2638,8 @@
                                 const colIdx = findColIdx(dt.columns, tile.valueCol);
                                 if (colIdx >= 0) {
                                     const rawVal = dt.data[0][colIdx]?.value;
-                                    result.value = tile.format === 'text' ? rawVal : parseFloat(rawVal);
+                                    result.rawValue = rawVal;
+                                    result.value = parseTableauNumericValue(rawVal) ?? rawVal;
                                 }
                             }
                         }
@@ -2602,7 +2654,8 @@
                                 const colIdx = findColIdx(dt.columns, tile.prevValueCol);
                                 if (colIdx >= 0) {
                                     const rawVal = dt.data[0][colIdx]?.value;
-                                    result.prevValue = parseFloat(rawVal);
+                                    result.prevRawValue = rawVal;
+                                    result.prevValue = parseTableauNumericValue(rawVal) ?? rawVal;
                                 }
                             }
                         }
@@ -2610,7 +2663,7 @@
 
                     // Compute delta
                     if (tile.type === 'metric' && result.value != null && result.prevValue != null
-                        && !isNaN(result.value) && !isNaN(result.prevValue)) {
+                        && typeof result.value === 'number' && typeof result.prevValue === 'number') {
                         result.delta = result.value - result.prevValue;
                         if (result.prevValue !== 0) {
                             result.deltaPercent = ((result.delta) / Math.abs(result.prevValue)) * 100;
@@ -2643,7 +2696,7 @@
             container.style.display = '';
             row.innerHTML = results.map(r => {
                 const esc = escHtml;
-                const formattedValue = formatKpiValue(r.value, r.format);
+                const formattedValue = formatKpiValue(r.value, r.format, r.rawValue);
                 let deltaHtml = '';
 
                 if (r.type === 'metric' && r.delta !== null && r.delta !== undefined) {
