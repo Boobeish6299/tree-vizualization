@@ -1129,7 +1129,8 @@
                table's right edge on the last column. */
             white-space: normal;
             overflow-wrap: break-word;
-            vertical-align: middle;
+            word-break: break-word;
+            vertical-align: bottom;
             border-bottom: 2px solid var(--border-color);
             user-select: none;
             cursor: pointer;
@@ -4110,11 +4111,11 @@
          *  after those, alphabetically. Data matching/filtering (toolFilter,
          *  toolFilterPrefix, groupTool) keeps the RAW data value — only
          *  display strings go through toolDisplayName(). */
-        const TOOL_DISPLAY_NAMES = { claude: 'Claude Code' };
+        const TOOL_DISPLAY_NAMES = { claude: 'Claude Code (P)', 'claude (p)': 'Claude Code (P)', 'claude code': 'Claude Code (P)' };
         function toolDisplayName(t) {
             return TOOL_DISPLAY_NAMES[t.toString().trim().toLowerCase()] || t;
         }
-        const TOOL_COLUMN_ORDER = ['gemini', 'windsurf', 'claude'];
+        const TOOL_COLUMN_ORDER = ['gemini', 'windsurf', 'claude', 'claude (p)'];
         function sortToolsForDisplay(tools) {
             const rank = (t) => {
                 const i = TOOL_COLUMN_ORDER.indexOf(t.toString().trim().toLowerCase());
@@ -5351,6 +5352,17 @@
             if (splitDimP) {
                 const v = splitDimP.currentValue && splitDimP.currentValue.value;
                 parts.push(`SplitDim=${v != null ? v.toString() : 'Type'}`);
+            }
+
+            // Selected Models parameter: changing it must bust the raw-data
+            // cache so the Total worksheet returns freshly model-filtered values.
+            // Without this the signature stays the same on a model change → the
+            // old cached tables are reused → Total Credit Usage ignores the filter.
+            const selectedModelsP = params.find(p => p.name === 'Selected Models');
+            if (selectedModelsP) {
+                const v = selectedModelsP.currentValue && selectedModelsP.currentValue.value;
+                const mv = v != null ? v.toString().toLowerCase().trim() : 'all';
+                parts.push(`SelectedModels=${mv}`);
             }
 
             // Probe worksheet filters — read in ONE pass instead of two separate calls
