@@ -2562,6 +2562,11 @@
         // flat provider mode). Pure render-side state — toggling re-renders
         // from the already-built tree, no refetch.
         const expandedCreditTools = new Set();
+        // Tracks the current value of the "Selected Models" workbook parameter so
+        // fetchDataAndRender can auto-expand credit groups without an extra async
+        // getParametersAsync call on every render.  Updated by the ParameterChanged
+        // listener registered in setupEventListenersAndFetch.
+        let _selectedModelsParamValue = 'all';
         let colDefs = [];            // Array of metric column definitions
         let hierarchyCols = [];      // Array of {level, idx, name}
         let allCurrentCols = [];     // All columns from current sheet (for config)
@@ -3639,6 +3644,19 @@
                         }));
                         return;
                     }
+                    if (p.name === 'Selected Models') {
+                        // Keep _selectedModelsParamValue in sync so auto-expand in
+                        // fetchDataAndRender works without an extra getParametersAsync call.
+                        const _readVal = v => (v != null ? String(v) : 'all').toLowerCase().trim() || 'all';
+                        _selectedModelsParamValue = _readVal(p.currentValue && p.currentValue.value);
+                        unregisterHandlers.push(p.addEventListener(tableau.TableauEventType.ParameterChanged, (ev) => {
+                            ev.getParameterAsync()
+                                .then(param => { _selectedModelsParamValue = _readVal(param.currentValue && param.currentValue.value); })
+                                .catch(() => {});
+                            debouncedFetch();
+                        }));
+                        return;
+                    }
                     unregisterHandlers.push(p.addEventListener(tableau.TableauEventType.ParameterChanged, debouncedFetch));
                 });
                 if (!syncParamFound) {
@@ -4295,6 +4313,15 @@
             // config is stale or partial.
             function resolveOrder(col, fallbackIdx) {
                 if (col.displayName in orderMap) return orderMap[col.displayName];
+                // Model/family sub-columns inherit their credit group TOTAL anchor's
+                // saved position so they stay alongside their group even when their
+                // exact displayName isn't in the saved config (e.g. after the
+                // Dynamic Columns formula switches from FAMILY to MODEL names).
+                // The TOTAL anchor's displayName equals its groupLabel, so looking
+                // up groupLabel gives us the anchor's configured position.
+                if (col.groupLabel && col.subLabel !== 'TOTAL' && col.groupLabel in orderMap) {
+                    return orderMap[col.groupLabel];
+                }
                 return 9999 + fallbackIdx;
             }
 
@@ -5575,6 +5602,10 @@
                             if (overlayEl) overlayEl.classList.remove('visible');
                             if (!isRefresh) { loadingEl.style.display = 'none'; toolbarEl.style.display = 'flex'; }
                             console.log('[HierExt] built-tree cache-hit: skipping rebuild for sig:', lastDataSignature);
+                            // Auto-expand credit groups when model filter is active
+                            if (_selectedModelsParamValue && _selectedModelsParamValue !== 'all') {
+                                colDefs.forEach(c => { if (c.groupTool) expandedCreditTools.add(c.groupTool); });
+                            }
                             renderTable();
                             return;
                         }
@@ -5985,6 +6016,11 @@
                                 return out;
                             };
                             colDefs = regroupColDefs(applyColDisplaySettings(taColDefs, isMultiTool, detectedTools));
+                            // Auto-expand credit groups when specific models are selected so
+                            // users see model-level rows immediately without clicking [+].
+                            if (_selectedModelsParamValue && _selectedModelsParamValue !== 'all') {
+                                colDefs.forEach(c => { if (c.groupTool) expandedCreditTools.add(c.groupTool); });
+                            }
                             activeTools = [];
 
                             // Detect hierarchy columns DIRECTLY from splitDataTable and totalDataTable.
