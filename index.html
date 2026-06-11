@@ -3166,14 +3166,18 @@
                 const showFor = (r.showForTools || '').trim();
                 if (!showFor) return true;  // no restriction — always show
                 const allowed = showFor.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+                // No tools detected yet (first load) — show everything
+                if (tools.length === 0) return true;
                 if (isMultiTool) {
                     // "All" / multi-tool view: show if "all" is in the allowed list
                     // OR any currently-active tool name is in the allowed list
                     if (allowed.includes('all')) return true;
                     return tools.some(t => allowed.includes(t.toLowerCase()));
                 } else {
-                    const singleTool = (tools[0] || '').toLowerCase();
-                    return allowed.includes(singleTool) || allowed.includes('all');
+                    // Single-tool view: 'all' in showForTools means "show in multi-tool/All view"
+                    // and must NOT match here. Only an exact tool name match passes.
+                    const singleTool = tools[0].toLowerCase();
+                    return allowed.includes(singleTool);
                 }
             });
         }
@@ -3220,7 +3224,7 @@
                     --kpi-value-size: ${r.valueFontSize}px;
                     border-left-style: ${r.borderStyle};
                 ">
-                    <div class="kpi-tile-title">${r.toolFilterLabel ? esc(r.toolFilterLabel) + ' ' : ''}${esc(r.title)}${infoHtml}</div>
+                    <div class="kpi-tile-title">${esc(r.title)}${infoHtml}</div>
                     <div class="kpi-tile-value" style="color: ${r.valueColor}">${esc(formattedValue)}</div>
                     ${deltaHtml}
                 </div>`;
