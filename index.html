@@ -3863,15 +3863,6 @@
                         }
                         return;
                     }
-                    // Lift the event-burst suppression window before the definitive fetch.
-                    // 800 ms delay + 500 ms here = 1 300 ms after Phase 2: all
-                    // FilterChanged/ParameterChanged bursts from applyFilterAsync have settled.
-                    // Clearing suppressFetch now lets any SummaryDataChanged (Snowflake
-                    // completion) through — if the definitive fetch below reads stale cached
-                    // data, the subsequent SummaryDataChanged re-triggers debouncedFetchSlow
-                    // and a second render with the freshly loaded rows corrects the columns.
-                    suppressFetch = false;
-                    if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
                     fetchDataAndRender();
                 };
                 setTimeout(() => fireDefinitiveFetch(0), 500);
@@ -5696,12 +5687,16 @@
 
             const parts = [];
 
-            // Team selection from the sync parameter (see comment above).
+            // Team and Tool selection from the sync parameter (see comment above).
             let teamPaths = '';
+            let teamTools = '';
             const syncP = params.find(p => p.name === SYNC_PARAM_NAME);
             if (syncP) {
                 const sync = parseSyncParam(syncP.currentValue && syncP.currentValue.value);
-                if (sync && Array.isArray(sync.paths)) teamPaths = JSON.stringify(sync.paths);
+                if (sync) {
+                    if (Array.isArray(sync.paths)) teamPaths = JSON.stringify(sync.paths);
+                    if (Array.isArray(sync.tools)) teamTools = JSON.stringify(sync.tools);
+                }
             }
 
             // Date parameters
@@ -5769,10 +5764,11 @@
                 }
             });
 
-            // Include the authoritative parameter-based team sig. This changes
+            // Include the authoritative parameter-based team and tool sig. This changes
             // the moment the filter ext commits the sync parameter (before
             // applyFilterAsync), guaranteeing a cache miss on every real pick.
             if (teamPaths) parts.push(`team=${teamPaths}`);
+            if (teamTools) parts.push(`tools=${teamTools}`);
 
             // teamPaths is returned alongside so the fast-path guard can
             // compare it independently of the joined signature.
