@@ -3069,7 +3069,7 @@
             const chips = [];
 
             // Date
-            if (_dateRangeLabel) chips.push(chip('📅', _dateRangeLabel, false));
+            if (_dateRangeLabel) chips.push(chip('Date Range', _dateRangeLabel, false));
 
             // Tool
             const toolVal = _activeToolLabel || 'All';
@@ -3090,7 +3090,7 @@
                 if (lastTeamExplicitPaths) {
                     const paths = JSON.parse(lastTeamExplicitPaths);
                     if (Array.isArray(paths) && paths.length > 0) {
-                        const names = paths.map(p => p.toString().split('|').pop().trim()).filter(Boolean);
+                        const names = paths.map(p => p.toString().split('|').map(s => s.trim()).join(' / ')).filter(Boolean);
                         teamVal = names.join(', ');
                     }
                 }
@@ -3834,11 +3834,12 @@
                 // sees a stale value and double-fires.
                 lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : lastTeamSelectionStamp;
                 pendingFetch = false;
-                // suppressNextEventsFor() (not a bare suppressFetch=true) so any
-                // fetchTimeout armed between the 30s window expiring and this
-                // transition arriving is also cancelled.
-                suppressNextEventsFor(45000);
-                console.log('[visual-ext] sync param: applyActive cleared → one definitive fetch, suppress extended 45 s');
+                // Short suppression window (2s) to ignore the immediate event burst
+                // from parameter/filter updates, while allowing subsequent Snowflake
+                // query completion events (SummaryDataChanged) to successfully refresh
+                // the visual extension once they settle.
+                suppressNextEventsFor(2000);
+                console.log('[visual-ext] sync param: applyActive cleared → one definitive fetch, suppress extended 2 s');
                 renderFilterContextBar();
                 // Wait 500ms before fetching: applyFilterAsync resolves before
                 // the filter is fully committed to the worksheet's selection
