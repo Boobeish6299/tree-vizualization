@@ -2647,6 +2647,8 @@
            ================================================================ */
         let kpiTileConfigs = [];  // Array of tile config objects
         let kpiTileResults = [];  // Last-fetched tile data
+        let _currentDetectedTools = [];  // Updated after each fetch; drives KPI tile visibility
+        let _gcaCreditHasData = false;   // True when any GCA credit row > 0 in current data
 
         /** Parse a formatted Tableau cell value to a number, handling K/M/B suffixes, commas, and currency symbols */
         function parseTableauNumericValue(str) {
@@ -2736,6 +2738,14 @@
                     <div class="kpi-config-full" style="margin-top: 4px;">
                         <label class="cfg-label">Hover Description / Info Message</label>
                         <input type="text" class="cfg-input kpi-cfg-description" value="${esc(tile.description || '')}" placeholder="e.g. Total active users in the selected timeframe">
+                    </div>
+                    <div class="kpi-config-full" style="margin-top: 4px;">
+                        <label class="cfg-label">Show for Tools (comma-separated tool names; blank = always show)</label>
+                        <input type="text" class="cfg-input kpi-cfg-show-tools" value="${esc(tile.showForTools || '')}" placeholder="e.g. Windsurf, All  |  leave blank to always show">
+                    </div>
+                    <div style="margin-top:6px; display:flex; align-items:center; gap:6px">
+                        <input type="checkbox" class="kpi-cfg-credit-gt0" id="kpi-cgt0-${esc(tile.id)}"${tile.showIfCreditGt0 ? ' checked' : ''}>
+                        <label class="cfg-label" for="kpi-cgt0-${esc(tile.id)}" style="margin:0">Hide tile when fetched value = 0</label>
                     </div>
                     <div>
                         <label class="cfg-label">Type</label>
@@ -2878,6 +2888,8 @@
                 valueFontSize: 28,
                 valueColor: '#3b82f6',
                 borderStyle: 'solid',
+                showForTools: '',
+                showIfCreditGt0: false,
             });
             renderAllKpiTileConfigs();
         }
@@ -2947,6 +2959,8 @@
                     valueFontSize: parseInt(card.querySelector('.kpi-cfg-value-size')?.value) || 28,
                     valueColor: card.querySelector('.kpi-cfg-value-color')?.value || '#3b82f6',
                     borderStyle: card.querySelector('.kpi-cfg-border-style')?.value || 'solid',
+                    showForTools: card.querySelector('.kpi-cfg-show-tools')?.value?.trim() || '',
+                    showIfCreditGt0: card.querySelector('.kpi-cfg-credit-gt0')?.checked || false,
                 });
             });
             return result;
@@ -3007,9 +3021,7 @@
             if (!modelVal || modelVal === 'all') {
                 modelVal = 'All';
             } else {
-                const models = modelVal.split(',').map(s => s.trim()).filter(Boolean);
-                if (models.length > 2) modelVal = models.slice(0, 2).join(', ') + ` +${models.length - 2}`;
-                else modelVal = models.join(', ');
+                modelVal = modelVal.split(',').map(s => s.trim()).filter(Boolean).join(', ');
             }
             chips.push(chip('Model', modelVal, modelVal !== 'All'));
 
@@ -3020,9 +3032,7 @@
                     const paths = JSON.parse(lastTeamExplicitPaths);
                     if (Array.isArray(paths) && paths.length > 0) {
                         const names = paths.map(p => p.toString().split('|').pop().trim()).filter(Boolean);
-                        if (names.length === 1) teamVal = names[0];
-                        else if (names.length === 2) teamVal = names.join(', ');
-                        else teamVal = `${names[0]} +${names.length - 1}`;
+                        teamVal = names.join(', ');
                     }
                 }
             } catch (_) {}
@@ -3065,6 +3075,8 @@
                     delta: null,
                     deltaPercent: null,
                     toolFilterLabel: '',
+                    showForTools: tile.showForTools || '',
+                    showIfCreditGt0: !!tile.showIfCreditGt0,
                 };
 
                 try {
@@ -3124,9 +3136,46 @@
             });
 
             const resolved = await Promise.all(fetchPromises);
-            // Update cached tool label for the filter context bar
-            _activeToolLabel = resolved.find(r => r.toolFilterLabel)?.toolFilterLabel || '';
             return resolved;
+        }
+
+        /**
+         * Filter KPI tile results based on the current tool selection and
+         * per-tile visibility rules (showForTools, showIfCreditGt0).
+         *
+         * showForTools: comma-separated tool names (case-insensitive). Special
+         *   value "All" means "show in multi-tool (All) view". An empty string
+         *   means no tool restriction — always show. Examples:
+         *     "Windsurf"                 → show only when Windsurf is the single tool
+         *     "Windsurf, All"            → show when Windsurf is selected OR All is selected
+         *     "Google Code Assist, All"  → show when GCA is selected OR All is selected
+         *     ""                         → always show
+         *
+         * showIfCreditGt0: true → only show the tile when its fetched value > 0.
+         */
+        function filterKpiResultsByTool(results) {
+            const tools = _currentDetectedTools;
+            const isMultiTool = tools.length > 1;
+            return results.filter(r => {
+                // Value guard: hide when value is 0 (or null) and the flag is set
+                if (r.showIfCreditGt0) {
+                    const numVal = typeof r.value === 'number' ? r.value : parseFloat(r.value);
+                    if (isNaN(numVal) || numVal <= 0) return false;
+                }
+                // Tool visibility guard
+                const showFor = (r.showForTools || '').trim();
+                if (!showFor) return true;  // no restriction — always show
+                const allowed = showFor.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+                if (isMultiTool) {
+                    // "All" / multi-tool view: show if "all" is in the allowed list
+                    // OR any currently-active tool name is in the allowed list
+                    if (allowed.includes('all')) return true;
+                    return tools.some(t => allowed.includes(t.toLowerCase()));
+                } else {
+                    const singleTool = (tools[0] || '').toLowerCase();
+                    return allowed.includes(singleTool) || allowed.includes('all');
+                }
+            });
         }
 
         /* ── KPI Tile Rendering ──────────────────────────────────────────── */
@@ -3216,6 +3265,23 @@
         /* ================================================================
            FORMATTING UTILITIES
            ================================================================ */
+        // Converts an ISO date string ("2026-05-01") to "May 01, 2026" matching
+        // the format used in the filter extension's date picker display.
+        function formatDateForContextBar(isoStr) {
+            if (!isoStr) return '';
+            const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            try {
+                const parts = String(isoStr).split(/[-\/]/);
+                if (parts.length >= 3) {
+                    const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, d = parseInt(parts[2], 10);
+                    if (!isNaN(y) && m >= 0 && m < 12 && !isNaN(d)) {
+                        return `${MONTHS[m]} ${String(d).padStart(2, '0')}, ${y}`;
+                    }
+                }
+            } catch (_) {}
+            return String(isoStr);
+        }
+
         function formatK(val) {
             const abs = Math.abs(val);
             if (abs >= 1000000) return (val / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -3589,8 +3655,21 @@
         function handleSyncParamValue(raw, isInitial) {
             const sync = parseSyncParam(raw);
             if (!sync) return;
+
+            // Reactively update team paths and tool label from the sync param
+            // so the context bar reflects the new selection immediately —
+            // before the full data fetch (which can be slow on Snowflake)
+            // completes.
+            if (Array.isArray(sync.paths)) {
+                lastTeamExplicitPaths = JSON.stringify(sync.paths);
+            }
+            if (Array.isArray(sync.tools)) {
+                _activeToolLabel = sync.tools.length === 0 ? '' : sync.tools.join(', ');
+            }
+
             if (isInitial) {
                 lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : null;
+                renderFilterContextBar();
                 // If the filter extension is already mid-apply when we start up
                 // (it writes applyActive='1' before its initial fetch), hold our
                 // first fetch for its definitive applyActive='' signal instead of
@@ -3624,6 +3703,7 @@
                     clearTimeout(_firstLoadPendingTimer);
                     _firstLoadPendingTimer = null;
                 }
+                renderFilterContextBar();
                 return;
             }
             if (suppressedByFilterApply) {
@@ -3639,6 +3719,7 @@
                 // transition arriving is also cancelled.
                 suppressNextEventsFor(45000);
                 console.log('[visual-ext] sync param: applyActive cleared → one definitive fetch, suppress extended 45 s');
+                renderFilterContextBar();
                 // Wait 500ms before fetching: applyFilterAsync resolves before
                 // the filter is fully committed to the worksheet's selection
                 // state; an immediate getSummaryDataAsync may still return
@@ -3672,6 +3753,7 @@
                 // No debouncedFetch() here — FilterChanged from applyFilterAsync
                 // already armed it, and the changed paths bust the signature.
             }
+            renderFilterContextBar();
         }
 
         function suppressNextEventsFor(ms) {
@@ -5488,8 +5570,8 @@
             });
             if (_dateLabelStart || _dateLabelEnd) {
                 _dateRangeLabel = _dateLabelStart && _dateLabelEnd
-                    ? `${_dateLabelStart} – ${_dateLabelEnd}`
-                    : (_dateLabelStart || _dateLabelEnd);
+                    ? `${formatDateForContextBar(_dateLabelStart)} – ${formatDateForContextBar(_dateLabelEnd)}`
+                    : formatDateForContextBar(_dateLabelStart || _dateLabelEnd);
             }
 
             // Split dimension — flipping Type ↔ Provider must bust the cache
@@ -6037,6 +6119,32 @@
                             // tools were detected above.
                             detectedTools = sortToolsForDisplay(detectedTools);
 
+                            // Expose detected tools globally so KPI tile filtering
+                            // and the context bar reflect the current selection.
+                            _currentDetectedTools = detectedTools;
+                            _activeToolLabel = detectedTools.join(', ');
+
+                            // Check whether Google Code Assist has any credit > 0
+                            // in the current split data. Used to conditionally show
+                            // GCA credit columns/tiles ("currently 0 across all records").
+                            const GCA_TOOL_NAME = 'Google Code Assist';
+                            const _splitCUIdx = findColIdx(splitDataTable.columns, splitCU);
+                            let _gcaCreditCheck = false;
+                            if (_splitCUIdx >= 0 && dynColIdx >= 0) {
+                                for (const _row of splitDataTable.data) {
+                                    const _dv = _row[dynColIdx]?.value;
+                                    if (_dv && (
+                                        _dv === GCA_TOOL_NAME ||
+                                        _dv.startsWith(GCA_TOOL_NAME + '::')
+                                    )) {
+                                        const _cv = _row[_splitCUIdx]?.value;
+                                        const _n = typeof _cv === 'number' ? _cv : parseFloat(_cv);
+                                        if (!isNaN(_n) && _n > 0) { _gcaCreditCheck = true; break; }
+                                    }
+                                }
+                            }
+                            _gcaCreditHasData = _gcaCreditCheck;
+
                             // Mode is now driven by SELECTED tool count, not by
                             // every tool in Split-Metrics: single-tool pick → only
                             // that tool's columns; multi-tool pick → Totals first,
@@ -6146,6 +6254,31 @@
                                     ]),
                                 ];
                             }
+
+                            // Remove GCA credit columns when GCA has no credit data.
+                            // Covers all column shapes: exact toolFilter, prefix-match group,
+                            // and per-model sub-columns under the Total Credit group.
+                            if (!_gcaCreditHasData) {
+                                const gcaModels = new Set(
+                                    (modelsByTool[GCA_TOOL_NAME] || []).map(m => m.model)
+                                );
+                                const COMBO_SEP = '::';
+                                taColDefs = taColDefs.filter(c => {
+                                    const isGcaPrefix = c.toolFilterPrefix &&
+                                        c.toolFilterPrefix.startsWith(GCA_TOOL_NAME + COMBO_SEP);
+                                    const isGcaExact = c.toolFilter && (
+                                        c.toolFilter === GCA_TOOL_NAME ||
+                                        c.toolFilter.startsWith(GCA_TOOL_NAME + COMBO_SEP)
+                                    );
+                                    const isCreditCol = c.sourceCol === splitCU;
+                                    if (isCreditCol && (isGcaPrefix || isGcaExact)) return false;
+                                    // Remove GCA model sub-columns from the Total Credit group
+                                    if (c.groupTool === '__total__' && c.toolFilterModel &&
+                                        gcaModels.has(c.toolFilterModel)) return false;
+                                    return true;
+                                });
+                            }
+
                             // Apply column display settings: rename headers, reorder groups, hide toggled-off columns
                             // Note: taColDefs stays unmodified for data merge below; colDefs is the display-facing version
                             //
@@ -6996,7 +7129,7 @@
                     // Fetch and render KPI tiles (non-blocking — tree renders first)
                     fetchKpiTileData().then(kpiResults => {
                         kpiTileResults = kpiResults;
-                        renderKpiTiles(kpiResults);
+                        renderKpiTiles(filterKpiResultsByTool(kpiResults));
                         renderFilterContextBar();
                     }).catch(e => console.warn('[KPI] tile fetch error:', e));
 
