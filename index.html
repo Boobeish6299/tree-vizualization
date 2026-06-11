@@ -2770,6 +2770,10 @@
                             <option value="">— Select Column —</option>
                         </select>
                     </div>
+                    <div class="kpi-config-full" style="margin-top: 4px;">
+                        <label class="cfg-label">Tool Filter Value (optional — filters rows by tool dimension, e.g. "Windsurf")</label>
+                        <input type="text" class="cfg-input kpi-cfg-tool-filter-value" value="${esc(tile.toolFilterValue || '')}" placeholder="e.g. Windsurf — lets multiple tiles share the same worksheet">
+                    </div>
                     <div class="kpi-prev-section" style="display:${isMetric ? '' : 'none'}">
                         <label class="cfg-label">Previous Period Worksheet</label>
                         <select class="cfg-select kpi-cfg-prev-ws" onchange="onKpiWsChange(this, 'prev')">
@@ -2890,6 +2894,7 @@
                 borderStyle: 'solid',
                 showForTools: '',
                 showIfCreditGt0: false,
+                toolFilterValue: '',
             });
             renderAllKpiTileConfigs();
         }
@@ -2961,6 +2966,7 @@
                     borderStyle: card.querySelector('.kpi-cfg-border-style')?.value || 'solid',
                     showForTools: card.querySelector('.kpi-cfg-show-tools')?.value?.trim() || '',
                     showIfCreditGt0: card.querySelector('.kpi-cfg-credit-gt0')?.checked || false,
+                    toolFilterValue: card.querySelector('.kpi-cfg-tool-filter-value')?.value?.trim() || '',
                 });
             });
             return result;
@@ -3042,6 +3048,44 @@
             bar.style.display = 'flex';
         }
 
+        /** Read a single metric value from a worksheet, optionally scoped to one tool.
+         *  When toolFilterValue is set the worksheet may contain rows for multiple tools;
+         *  we locate the dynamic-column index, keep only rows whose tool value matches,
+         *  and SUM the target column — letting multiple tiles share the same worksheet
+         *  while each resolving its own per-tool aggregate.
+         *  Falls back to dt.data[0] when no filter is configured (original behaviour). */
+        async function _fetchKpiRowValue(ws, valueCol, toolFilterValue) {
+            const dt = await ws.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
+            if (!dt || !dt.data.length) return { value: null, rawValue: null };
+            const colIdx = findColIdx(dt.columns, valueCol);
+            if (colIdx < 0) return { value: null, rawValue: null };
+
+            if (toolFilterValue) {
+                const dynField = getSetting('dynamicColumnsField', 'Dynamic Columns');
+                const dynColIdx = findColIdx(dt.columns, dynField);
+                if (dynColIdx >= 0) {
+                    const tval = toolFilterValue.toLowerCase();
+                    const matchingRows = dt.data.filter(row => {
+                        const dv = (row[dynColIdx]?.value ?? '').toString().toLowerCase();
+                        // Match exact ("windsurf") or "Tool::Model" prefixed rows
+                        return dv === tval || dv.startsWith(tval + '::');
+                    });
+                    if (matchingRows.length) {
+                        let sum = 0, hasNum = false;
+                        for (const row of matchingRows) {
+                            const v = parseTableauNumericValue(row[colIdx]?.value);
+                            if (typeof v === 'number') { sum += v; hasNum = true; }
+                        }
+                        if (hasNum) return { value: sum, rawValue: sum };
+                    }
+                }
+            }
+
+            // No tool filter or no matching rows — use first row (original behaviour)
+            const rawVal = dt.data[0][colIdx]?.value;
+            return { value: parseTableauNumericValue(rawVal) ?? rawVal, rawValue: rawVal };
+        }
+
         async function fetchKpiTileData() {
             const tilesStr = getSetting('kpiTiles', '[]');
             let tiles;
@@ -3090,15 +3134,9 @@
                             }
                             result.toolFilterLabel = wsToolCache.get(tile.currentSheet);
 
-                            const dt = await ws.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
-                            if (dt && dt.data.length > 0) {
-                                const colIdx = findColIdx(dt.columns, tile.valueCol);
-                                if (colIdx >= 0) {
-                                    const rawVal = dt.data[0][colIdx]?.value;
-                                    result.rawValue = rawVal;
-                                    result.value = parseTableauNumericValue(rawVal) ?? rawVal;
-                                }
-                            }
+                            const { value, rawValue } = await _fetchKpiRowValue(ws, tile.valueCol, tile.toolFilterValue || '');
+                            result.rawValue = rawValue;
+                            result.value = value;
                         }
                     }
 
@@ -3106,15 +3144,9 @@
                     if (tile.type === 'metric' && tile.prevSheet && tile.prevValueCol) {
                         const prevWs = dashboard.worksheets.find(w => w.name === tile.prevSheet);
                         if (prevWs) {
-                            const dt = await prevWs.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
-                            if (dt && dt.data.length > 0) {
-                                const colIdx = findColIdx(dt.columns, tile.prevValueCol);
-                                if (colIdx >= 0) {
-                                    const rawVal = dt.data[0][colIdx]?.value;
-                                    result.prevRawValue = rawVal;
-                                    result.prevValue = parseTableauNumericValue(rawVal) ?? rawVal;
-                                }
-                            }
+                            const { value: pv, rawValue: prv } = await _fetchKpiRowValue(prevWs, tile.prevValueCol, tile.toolFilterValue || '');
+                            result.prevRawValue = prv;
+                            result.prevValue = pv;
                         }
                     }
 
@@ -3157,10 +3189,18 @@
             const tools = _currentDetectedTools;
             const isMultiTool = tools.length > 1;
             return results.filter(r => {
-                // Value guard: hide when value is 0 (or null) and the flag is set
+                // Value guard: hide when value is 0 (or null) and the flag is set.
+                // For GCA-tagged tiles, use _gcaCreditHasData (built from per-row split data)
+                // rather than the tile's fetched value — the source worksheet is often an
+                // aggregate that includes Windsurf credit, making the raw value misleading.
                 if (r.showIfCreditGt0) {
-                    const numVal = typeof r.value === 'number' ? r.value : parseFloat(r.value);
-                    if (isNaN(numVal) || numVal <= 0) return false;
+                    const sf = (r.showForTools || '').toLowerCase();
+                    if (sf.includes('google code assist')) {
+                        if (!_gcaCreditHasData) return false;
+                    } else {
+                        const numVal = typeof r.value === 'number' ? r.value : parseFloat(r.value);
+                        if (isNaN(numVal) || numVal <= 0) return false;
+                    }
                 }
                 // Tool visibility guard
                 const showFor = (r.showForTools || '').trim();
