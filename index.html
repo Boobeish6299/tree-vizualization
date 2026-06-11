@@ -5593,6 +5593,22 @@
         // should fall back to the detected-tool set as the active selection.
         async function readSelectedToolFilter(dashboard) {
             try {
+                // First, try reading the selected tools from the Hierarchy Sync parameter.
+                // This is the absolute source of truth from the filter extension,
+                // and it is completely unaffected by worksheet-level exclusions!
+                const params = await dashboard.getParametersAsync().catch(() => []);
+                const syncP = params.find(p => p.name === SYNC_PARAM_NAME);
+                if (syncP) {
+                    const sync = parseSyncParam(syncP.currentValue && syncP.currentValue.value);
+                    if (sync && Array.isArray(sync.tools) && sync.tools.length > 0) {
+                        return sync.tools;
+                    }
+                }
+            } catch (e) {
+                console.warn('[HierExt] Failed to read selected tools from sync parameter:', e);
+            }
+
+            try {
                 const treeSourceSheets = new Set([
                     getSetting('splitMetricsSheet', 'Split - Metrics'),
                     getSetting('splitMetricsPrevSheet', 'Split - Metrics - Prev'),
@@ -5604,7 +5620,13 @@
                     // getFiltersAsync round-trip.
                     getSetting('leaderHierarchySheet', 'Leader Filter'),
                 ]);
-                const candidates = dashboard.worksheets.filter(w => w.name && !treeSourceSheets.has(w.name));
+                const candidates = dashboard.worksheets.filter(w => {
+                    if (!w.name || treeSourceSheets.has(w.name)) return false;
+                    const nameLower = w.name.toLowerCase();
+                    // Skip tool-specific sheets to avoid reading their hardcoded filters
+                    if (nameLower.includes('windsurf') || nameLower.includes('gca') || nameLower.includes('google code assist')) return false;
+                    return true;
+                });
                 for (const ws of candidates) {
                     let filters;
                     try {
