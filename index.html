@@ -3863,6 +3863,15 @@
                         }
                         return;
                     }
+                    // Lift the event-burst suppression window before the definitive fetch.
+                    // 800 ms delay + 500 ms here = 1 300 ms after Phase 2: all
+                    // FilterChanged/ParameterChanged bursts from applyFilterAsync have settled.
+                    // Clearing suppressFetch now lets any SummaryDataChanged (Snowflake
+                    // completion) through — if the definitive fetch below reads stale cached
+                    // data, the subsequent SummaryDataChanged re-triggers debouncedFetchSlow
+                    // and a second render with the freshly loaded rows corrects the columns.
+                    suppressFetch = false;
+                    if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; }
                     fetchDataAndRender();
                 };
                 setTimeout(() => fireDefinitiveFetch(0), 500);
