@@ -2774,6 +2774,17 @@
                         <label class="cfg-label">Tool Filter Value (optional — filters rows by tool dimension, e.g. "Windsurf")</label>
                         <input type="text" class="cfg-input kpi-cfg-tool-filter-value" value="${esc(tile.toolFilterValue || '')}" placeholder="e.g. Windsurf — lets multiple tiles share the same worksheet">
                     </div>
+                    <div class="kpi-config-full" style="margin-top: 4px;">
+                        <label class="cfg-label">Measure Name Filter (optional — for Measure Names/Values sheets, e.g. "Tool Active Users")</label>
+                        <input type="text" class="cfg-input kpi-cfg-measure-name-filter" value="${esc(tile.measureNameFilter || '')}" placeholder="e.g. Tool Active Users  or  Credit Usage - Metric">
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <label class="cfg-label">Aggregation Mode</label>
+                        <select class="cfg-select kpi-cfg-aggregation-mode">
+                            <option value="sum"${(tile.aggregationMode || 'sum') === 'sum' ? ' selected' : ''}>Sum — additive metrics (e.g. Credit Usage)</option>
+                            <option value="first"${tile.aggregationMode === 'first' ? ' selected' : ''}>First match — LOD / distinct count (e.g. Active Users)</option>
+                        </select>
+                    </div>
                     <div class="kpi-prev-section" style="display:${isMetric ? '' : 'none'}">
                         <label class="cfg-label">Previous Period Worksheet</label>
                         <select class="cfg-select kpi-cfg-prev-ws" onchange="onKpiWsChange(this, 'prev')">
@@ -2895,6 +2906,8 @@
                 showForTools: '',
                 showIfCreditGt0: false,
                 toolFilterValue: '',
+                measureNameFilter: '',
+                aggregationMode: 'sum',
             });
             renderAllKpiTileConfigs();
         }
@@ -2967,6 +2980,8 @@
                     showForTools: card.querySelector('.kpi-cfg-show-tools')?.value?.trim() || '',
                     showIfCreditGt0: card.querySelector('.kpi-cfg-credit-gt0')?.checked || false,
                     toolFilterValue: card.querySelector('.kpi-cfg-tool-filter-value')?.value?.trim() || '',
+                    measureNameFilter: card.querySelector('.kpi-cfg-measure-name-filter')?.value?.trim() || '',
+                    aggregationMode: card.querySelector('.kpi-cfg-aggregation-mode')?.value || 'sum',
                 });
             });
             return result;
@@ -3048,13 +3063,16 @@
             bar.style.display = 'flex';
         }
 
-        /** Read a single metric value from a worksheet, optionally scoped to one tool.
-         *  When toolFilterValue is set the worksheet may contain rows for multiple tools;
-         *  we locate the dynamic-column index, keep only rows whose tool value matches,
-         *  and SUM the target column — letting multiple tiles share the same worksheet
-         *  while each resolving its own per-tool aggregate.
-         *  Falls back to dt.data[0] when no filter is configured (original behaviour). */
-        async function _fetchKpiRowValue(ws, valueCol, toolFilterValue) {
+        /** Read a single metric value from a worksheet, optionally scoped to one tool
+         *  and one measure name (for Measure Names/Values structured sheets like Split - Metrics).
+         *
+         *  toolFilterValue  — filters rows where Dynamic Columns = value or starts with value+'::'
+         *  measureNameFilter — further filters rows where Measure Names = value (strips AGG/SUM wrappers)
+         *  aggregationMode  — 'sum' (default): sums matching rows, correct for additive metrics like
+         *                     Credit Usage. 'first': takes the first matching row only, correct for
+         *                     LOD/distinct-count measures like Tool Active Users that repeat the same
+         *                     value across every model row for a given tool — summing would multiply. */
+        async function _fetchKpiRowValue(ws, valueCol, toolFilterValue, measureNameFilter, aggregationMode) {
             const dt = await ws.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
             if (!dt || !dt.data.length) return { value: null, rawValue: null };
             const colIdx = findColIdx(dt.columns, valueCol);
@@ -3065,18 +3083,38 @@
                 const dynColIdx = findColIdx(dt.columns, dynField);
                 if (dynColIdx >= 0) {
                     const tval = toolFilterValue.toLowerCase();
-                    const matchingRows = dt.data.filter(row => {
+                    let matchingRows = dt.data.filter(row => {
                         const dv = (row[dynColIdx]?.value ?? '').toString().toLowerCase();
-                        // Match exact ("windsurf") or "Tool::Model" prefixed rows
                         return dv === tval || dv.startsWith(tval + '::');
                     });
-                    if (matchingRows.length) {
-                        let sum = 0, hasNum = false;
-                        for (const row of matchingRows) {
-                            const v = parseTableauNumericValue(row[colIdx]?.value);
-                            if (typeof v === 'number') { sum += v; hasNum = true; }
+
+                    // Narrow further by measure name when the sheet uses Measure Names/Values
+                    if (measureNameFilter && matchingRows.length) {
+                        const mnColIdx = findColIdx(dt.columns, 'Measure Names');
+                        if (mnColIdx >= 0) {
+                            const mval = cleanFieldName(measureNameFilter).toLowerCase();
+                            matchingRows = matchingRows.filter(row => {
+                                const mn = cleanFieldName((row[mnColIdx]?.value ?? '').toString()).toLowerCase();
+                                return mn === mval;
+                            });
                         }
-                        if (hasNum) return { value: sum, rawValue: sum };
+                    }
+
+                    if (matchingRows.length) {
+                        if (aggregationMode === 'first') {
+                            // LOD measures (e.g. Tool Active Users) are constant across all model
+                            // rows for a given tool — the first row already holds the correct total.
+                            const v = parseTableauNumericValue(matchingRows[0][colIdx]?.value);
+                            if (typeof v === 'number') return { value: v, rawValue: v };
+                        } else {
+                            // sum mode (default) — correct for additive metrics like Credit Usage
+                            let sum = 0, hasNum = false;
+                            for (const row of matchingRows) {
+                                const v = parseTableauNumericValue(row[colIdx]?.value);
+                                if (typeof v === 'number') { sum += v; hasNum = true; }
+                            }
+                            if (hasNum) return { value: sum, rawValue: sum };
+                        }
                     }
                 }
             }
@@ -3134,7 +3172,7 @@
                             }
                             result.toolFilterLabel = wsToolCache.get(tile.currentSheet);
 
-                            const { value, rawValue } = await _fetchKpiRowValue(ws, tile.valueCol, tile.toolFilterValue || '');
+                            const { value, rawValue } = await _fetchKpiRowValue(ws, tile.valueCol, tile.toolFilterValue || '', tile.measureNameFilter || '', tile.aggregationMode || 'sum');
                             result.rawValue = rawValue;
                             result.value = value;
                         }
@@ -3144,7 +3182,7 @@
                     if (tile.type === 'metric' && tile.prevSheet && tile.prevValueCol) {
                         const prevWs = dashboard.worksheets.find(w => w.name === tile.prevSheet);
                         if (prevWs) {
-                            const { value: pv, rawValue: prv } = await _fetchKpiRowValue(prevWs, tile.prevValueCol, tile.toolFilterValue || '');
+                            const { value: pv, rawValue: prv } = await _fetchKpiRowValue(prevWs, tile.prevValueCol, tile.toolFilterValue || '', tile.measureNameFilter || '', tile.aggregationMode || 'sum');
                             result.prevRawValue = prv;
                             result.prevValue = pv;
                         }
