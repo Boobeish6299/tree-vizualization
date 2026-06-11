@@ -2775,8 +2775,10 @@
                         <input type="text" class="cfg-input kpi-cfg-tool-filter-value" value="${esc(tile.toolFilterValue || '')}" placeholder="e.g. Windsurf — lets multiple tiles share the same worksheet">
                     </div>
                     <div class="kpi-config-full" style="margin-top: 4px;">
-                        <label class="cfg-label">Measure Name Filter (optional — for Measure Names/Values sheets, e.g. "Tool Active Users")</label>
-                        <input type="text" class="cfg-input kpi-cfg-measure-name-filter" value="${esc(tile.measureNameFilter || '')}" placeholder="e.g. Tool Active Users  or  Credit Usage - Metric">
+                        <label class="cfg-label">Measure Name Filter (optional — populated from worksheet's Measure Names column)</label>
+                        <select class="cfg-select kpi-cfg-measure-name-filter">
+                            <option value="">— All measures (no filter) —</option>
+                        </select>
                     </div>
                     <div style="margin-top: 6px;">
                         <label class="cfg-label">Aggregation Mode</label>
@@ -2878,6 +2880,7 @@
                     const curWs = card.querySelector('.kpi-cfg-current-ws');
                     curWs.value = tile.currentSheet;
                     populateKpiColSelect(card.querySelector('.kpi-cfg-value-col'), tile.currentSheet, tile.valueCol);
+                    populateKpiMeasureNameSelect(card.querySelector('.kpi-cfg-measure-name-filter'), tile.currentSheet, tile.measureNameFilter || '');
                 }
                 if (tile.prevSheet) {
                     const prevWs = card.querySelector('.kpi-cfg-prev-ws');
@@ -2932,6 +2935,10 @@
                 : card.querySelector('.kpi-cfg-prev-col');
             const wsName = selectEl.value;
             populateKpiColSelect(colSelect, wsName, '');
+            // Refresh the measure name dropdown whenever the worksheet changes (current period only)
+            if (which === 'current') {
+                populateKpiMeasureNameSelect(card.querySelector('.kpi-cfg-measure-name-filter'), wsName, '');
+            }
         }
 
         async function populateKpiColSelect(selectEl, wsName, savedValue) {
@@ -2953,6 +2960,37 @@
                 });
             } catch (e) {
                 console.warn('[KPI] failed to load columns for', wsName, e);
+            }
+        }
+
+        /** Populate the Measure Name Filter dropdown with the unique raw values found in the
+         *  worksheet's Measure Names column. Stores the raw Tableau value (e.g. "AGG(Active Users
+         *  - Metric)") so _fetchKpiRowValue can match exactly — no fragile text-cleaning needed. */
+        async function populateKpiMeasureNameSelect(selectEl, wsName, savedValue) {
+            if (!selectEl) return;
+            selectEl.innerHTML = '<option value="">— All measures (no filter) —</option>';
+            if (!wsName) return;
+            try {
+                const dashboard = tableau.extensions.dashboardContent.dashboard;
+                const ws = dashboard.worksheets.find(w => w.name === wsName);
+                if (!ws) return;
+                const dt = await ws.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 });
+                const mnColIdx = findColIdx(dt.columns, 'Measure Names');
+                if (mnColIdx < 0) return;  // worksheet doesn't use Measure Names/Values pattern
+                const seen = new Set();
+                dt.data.forEach(row => {
+                    const v = (row[mnColIdx]?.value ?? '').toString().trim();
+                    if (v) seen.add(v);
+                });
+                [...seen].sort().forEach(rawVal => {
+                    const opt = document.createElement('option');
+                    opt.value = rawVal;                              // exact raw value for matching
+                    opt.textContent = cleanFieldName(rawVal) || rawVal;  // friendly display label
+                    if (rawVal === savedValue) opt.selected = true;
+                    selectEl.appendChild(opt);
+                });
+            } catch (e) {
+                console.warn('[KPI] failed to load measure names for', wsName, e);
             }
         }
 
@@ -3088,15 +3126,15 @@
                         return dv === tval || dv.startsWith(tval + '::');
                     });
 
-                    // Narrow further by measure name when the sheet uses Measure Names/Values
+                    // Narrow further by measure name when the sheet uses Measure Names/Values.
+                    // measureNameFilter holds the exact raw value from the dropdown (e.g.
+                    // "AGG(Active Users - Metric)") so we match directly — no cleaning needed.
                     if (measureNameFilter && matchingRows.length) {
                         const mnColIdx = findColIdx(dt.columns, 'Measure Names');
                         if (mnColIdx >= 0) {
-                            const mval = cleanFieldName(measureNameFilter).toLowerCase();
-                            matchingRows = matchingRows.filter(row => {
-                                const mn = cleanFieldName((row[mnColIdx]?.value ?? '').toString()).toLowerCase();
-                                return mn === mval;
-                            });
+                            matchingRows = matchingRows.filter(row =>
+                                (row[mnColIdx]?.value ?? '').toString().trim() === measureNameFilter
+                            );
                         }
                     }
 
