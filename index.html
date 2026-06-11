@@ -1097,9 +1097,7 @@
             width: var(--leader-col-width, 200px);
             min-width: 160px;
             max-width: var(--leader-col-width, 240px);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow: visible;
         }
 
         /* Metric columns: equal share of remaining space, consistent minimum */
@@ -1321,10 +1319,9 @@
         /* Leader Cell (tree node) */
         .leader-cell {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 6px;
-            overflow: hidden;
-            /* contain within fixed column width */
+            overflow: visible;
             cursor: pointer;
         }
 
@@ -1362,13 +1359,10 @@
         .node-name {
             font-size: var(--font-size);
             font-weight: 400;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            white-space: normal;
+            overflow-wrap: break-word;
             flex: 1;
-            /* fill available space, truncate at edge */
             min-width: 0;
-            /* allow flex item to shrink below content size */
         }
 
         .parent-node .node-name {
@@ -1749,6 +1743,50 @@
 
         .kpi-tile-delta.kpi-neutral {
             color: var(--kpi-neutral-color, #f39c12);
+        }
+
+        /* ================================================================
+           FILTER CONTEXT BAR
+           ================================================================ */
+        #filter-context-bar {
+            display: none;
+            align-items: center;
+            padding: 5px 24px;
+            border-top: 1px solid var(--border-color, #e2e8f0);
+            background: var(--main-bg, #f0f4ff);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            gap: 0;
+        }
+
+        .ctx-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 12px;
+            font-size: 11px;
+        }
+
+        .ctx-chip + .ctx-chip {
+            border-left: 1px solid var(--border-color, #dde3ed);
+        }
+
+        .ctx-chip-label {
+            color: var(--header-font-color, #8a9bb0);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 10px;
+        }
+
+        .ctx-chip-value {
+            color: var(--font-color, #374151);
+            font-weight: 500;
+        }
+
+        .ctx-chip-value.ctx-active {
+            color: var(--accent-color, #667eea);
+            font-weight: 700;
         }
 
         /* ── Global trend-hidden: hides deltas in BOTH KPI tiles and tree table ── */
@@ -2499,6 +2537,9 @@
             <div id="kpi-tiles-row"></div>
         </div>
 
+        <!-- Filter Context Bar -->
+        <div id="filter-context-bar"></div>
+
         <div id="tree-toolbar" style="display: none;">
             <div style="display: flex; gap: 12px; align-items: center;">
                 <button id="btn-expand-all" class="btn-secondary" style="margin-top: 0;" onclick="expandAll()">Expand
@@ -2568,6 +2609,8 @@
         // getParametersAsync call on every render.  Updated by the ParameterChanged
         // listener registered in setupEventListenersAndFetch.
         let _selectedModelsParamValue = 'all';
+        let _dateRangeLabel = '';    // "Jun 03 – Jun 10, 2026" built from date params
+        let _activeToolLabel = '';   // Cached tool filter label for context bar
         let colDefs = [];            // Array of metric column definitions
         let hierarchyCols = [];      // Array of {level, idx, name}
         let allCurrentCols = [];     // All columns from current sheet (for config)
@@ -2911,6 +2954,84 @@
 
         /* ── KPI Data Fetching ───────────────────────────────────────────── */
 
+        /** Read the active categorical filter on the tool/dynamic dimension from a worksheet.
+         *  Returns a short label ("Windsurf", "Windsurf + Claude Code", "3 Tools") or "" if All. */
+        async function getActiveToolFilterLabel(ws) {
+            try {
+                const filters = await ws.getFiltersAsync();
+                const dynField = getSetting('dynamicColumnsField', 'Dynamic Columns');
+                const dynFieldClean = (cleanFieldName || (s => s))(dynField).toLowerCase();
+                const catFilter = filters.find(f => {
+                    if ((f.filterType || '').toLowerCase() !== 'categorical') return false;
+                    const fn = (cleanFieldName || (s => s))(f.fieldName || '').toLowerCase();
+                    return fn.includes(dynFieldClean) || fn.includes('tool') || fn.includes('type') || fn.includes('provider');
+                });
+                if (!catFilter || catFilter.isAllSelected) return '';
+                const vals = (catFilter.appliedValues || []).map(v => {
+                    const s = (v.value != null ? v.value.toString() : (v.formattedValue || '')).trim();
+                    // Strip combo "Tool::Model" prefix — only show tool portion
+                    const si = s.indexOf('::');
+                    return si > 0 ? s.slice(0, si).trim() : s;
+                }).filter(Boolean);
+                const unique = [...new Set(vals)];
+                if (!unique.length) return '';
+                if (unique.length === 1) return unique[0];
+                if (unique.length === 2) return unique.join(' + ');
+                return `${unique.length} Tools`;
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /** Render the filter context bar (date, tool, model, team chips). */
+        function renderFilterContextBar() {
+            const bar = document.getElementById('filter-context-bar');
+            if (!bar) return;
+
+            const e = escHtml || (s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+
+            const chip = (label, val, isActive) =>
+                `<span class="ctx-chip"><span class="ctx-chip-label">${e(label)}</span><span class="ctx-chip-value${isActive ? ' ctx-active' : ''}">${e(val)}</span></span>`;
+
+            const chips = [];
+
+            // Date
+            if (_dateRangeLabel) chips.push(chip('📅', _dateRangeLabel, false));
+
+            // Tool
+            const toolVal = _activeToolLabel || 'All';
+            chips.push(chip('Tool', toolVal, !!_activeToolLabel));
+
+            // Model
+            let modelVal = (_selectedModelsParamValue || '').trim();
+            if (!modelVal || modelVal === 'all') {
+                modelVal = 'All';
+            } else {
+                const models = modelVal.split(',').map(s => s.trim()).filter(Boolean);
+                if (models.length > 2) modelVal = models.slice(0, 2).join(', ') + ` +${models.length - 2}`;
+                else modelVal = models.join(', ');
+            }
+            chips.push(chip('Model', modelVal, modelVal !== 'All'));
+
+            // Team
+            let teamVal = 'All';
+            try {
+                if (lastTeamExplicitPaths) {
+                    const paths = JSON.parse(lastTeamExplicitPaths);
+                    if (Array.isArray(paths) && paths.length > 0) {
+                        const names = paths.map(p => p.toString().split('|').pop().trim()).filter(Boolean);
+                        if (names.length === 1) teamVal = names[0];
+                        else if (names.length === 2) teamVal = names.join(', ');
+                        else teamVal = `${names[0]} +${names.length - 1}`;
+                    }
+                }
+            } catch (_) {}
+            chips.push(chip('Team', teamVal, teamVal !== 'All'));
+
+            bar.innerHTML = chips.join('');
+            bar.style.display = 'flex';
+        }
+
         async function fetchKpiTileData() {
             const tilesStr = getSetting('kpiTiles', '[]');
             let tiles;
@@ -2919,6 +3040,9 @@
 
             const dashboard = tableau.extensions.dashboardContent.dashboard;
             const results = [];
+
+            // Cache tool filter labels per worksheet name to avoid duplicate getFiltersAsync calls
+            const wsToolCache = new Map();
 
             // Fetch all worksheets in parallel
             const fetchPromises = tiles.map(async tile => {
@@ -2940,6 +3064,7 @@
                     prevRawValue: null,
                     delta: null,
                     deltaPercent: null,
+                    toolFilterLabel: '',
                 };
 
                 try {
@@ -2947,6 +3072,12 @@
                     if (tile.currentSheet) {
                         const ws = dashboard.worksheets.find(w => w.name === tile.currentSheet);
                         if (ws) {
+                            // Resolve tool filter label for this worksheet (cached)
+                            if (!wsToolCache.has(tile.currentSheet)) {
+                                wsToolCache.set(tile.currentSheet, await getActiveToolFilterLabel(ws));
+                            }
+                            result.toolFilterLabel = wsToolCache.get(tile.currentSheet);
+
                             const dt = await ws.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 });
                             if (dt && dt.data.length > 0) {
                                 const colIdx = findColIdx(dt.columns, tile.valueCol);
@@ -2992,7 +3123,10 @@
                 return result;
             });
 
-            return Promise.all(fetchPromises);
+            const resolved = await Promise.all(fetchPromises);
+            // Update cached tool label for the filter context bar
+            _activeToolLabel = resolved.find(r => r.toolFilterLabel)?.toolFilterLabel || '';
+            return resolved;
         }
 
         /* ── KPI Tile Rendering ──────────────────────────────────────────── */
@@ -3037,7 +3171,7 @@
                     --kpi-value-size: ${r.valueFontSize}px;
                     border-left-style: ${r.borderStyle};
                 ">
-                    <div class="kpi-tile-title">${esc(r.title)}${infoHtml}</div>
+                    <div class="kpi-tile-title">${r.toolFilterLabel ? esc(r.toolFilterLabel) + ' ' : ''}${esc(r.title)}${infoHtml}</div>
                     <div class="kpi-tile-value" style="color: ${r.valueColor}">${esc(formattedValue)}</div>
                     ${deltaHtml}
                 </div>`;
@@ -3652,7 +3786,10 @@
                         _selectedModelsParamValue = _readVal(p.currentValue && p.currentValue.value);
                         unregisterHandlers.push(p.addEventListener(tableau.TableauEventType.ParameterChanged, (ev) => {
                             ev.getParameterAsync()
-                                .then(param => { _selectedModelsParamValue = _readVal(param.currentValue && param.currentValue.value); })
+                                .then(param => {
+                                    _selectedModelsParamValue = _readVal(param.currentValue && param.currentValue.value);
+                                    renderFilterContextBar();
+                                })
                                 .catch(() => {});
                             debouncedFetch();
                         }));
@@ -5334,13 +5471,26 @@
             }
 
             // Date parameters
+            let _dateLabelStart = '', _dateLabelEnd = '';
             params.forEach(p => {
                 const n = (p.name || '').toLowerCase();
-                if (n.includes('start date') || n.includes('end date') || n === 'start date' || n === 'end date') {
+                if (n.includes('start date') || n === 'start date') {
                     const v = p.currentValue && p.currentValue.value;
-                    parts.push(`${p.name}=${v != null ? v.toString() : ''}`);
+                    const vs = v != null ? v.toString() : '';
+                    parts.push(`${p.name}=${vs}`);
+                    _dateLabelStart = vs;
+                } else if (n.includes('end date') || n === 'end date') {
+                    const v = p.currentValue && p.currentValue.value;
+                    const vs = v != null ? v.toString() : '';
+                    parts.push(`${p.name}=${vs}`);
+                    _dateLabelEnd = vs;
                 }
             });
+            if (_dateLabelStart || _dateLabelEnd) {
+                _dateRangeLabel = _dateLabelStart && _dateLabelEnd
+                    ? `${_dateLabelStart} – ${_dateLabelEnd}`
+                    : (_dateLabelStart || _dateLabelEnd);
+            }
 
             // Split dimension — flipping Type ↔ Provider must bust the cache
             // (the loop above only captures the date params by name). Also the
@@ -6302,12 +6452,31 @@
                                 });
                             }
 
-                            // Detailed total column resolution diagnostic
+                            // Detailed total column resolution diagnostic — log results so console reveals mismatches
                             Object.entries(totalColCache).forEach(([key, idx]) => {
                                 const cleanKey = cleanFieldName(key);
                                 const colName = idx >= 0 ? totalDataTable.columns[idx]?.fieldName : 'NOT FOUND';
                                 const cleanCol = idx >= 0 ? cleanFieldName(colName) : 'N/A';
+                                if (idx < 0) {
+                                    console.warn(`[HierExt][TotalColDiag] UNRESOLVED: setting="${key}" clean="${cleanKey}" — Total worksheet column not found. ` +
+                                        `Available cols: [${totalDataTable.columns.map(c => `"${c.fieldName}"`).join(', ')}]`);
+                                } else {
+                                    console.log(`[HierExt][TotalColDiag] OK: setting="${key}" → colIdx=${idx} fieldName="${colName}" clean="${cleanCol}"`);
+                                }
                             });
+                            if (totalPivot.isPivot) {
+                                const pivotMeasures = new Set();
+                                totalDataTable.data.forEach(r => {
+                                    const v = r[totalPivot.mnIdx]?.value;
+                                    if (v) pivotMeasures.add(v.toString());
+                                });
+                                const totalCols = (taColDefs || []).filter(c => c.sourceSheet === 'total').map(c => c.sourceCol);
+                                console.log(`[HierExt][TotalPivotDiag] isPivot=true measureNames=[${[...pivotMeasures].join(', ')}] looking for=[${totalCols.join(', ')}]`);
+                                totalCols.forEach(sc => {
+                                    const matched = [...pivotMeasures].some(mn => pivotMeasureMatches(mn, sc));
+                                    if (!matched) console.warn(`[HierExt][TotalPivotDiag] NO MATCH for sourceCol="${sc}" against any measure name — check Measure Names in Total worksheet`);
+                                });
+                            }
 
                             // Sample a few paths to verify matching
                             const samplePaths = splitDataTable.data.slice(0, 3).map(r => computeLeafPath(r, splitHierCols));
@@ -6828,6 +6997,7 @@
                     fetchKpiTileData().then(kpiResults => {
                         kpiTileResults = kpiResults;
                         renderKpiTiles(kpiResults);
+                        renderFilterContextBar();
                     }).catch(e => console.warn('[KPI] tile fetch error:', e));
 
                     // ── Performance summary ───────────────────────────────────────
