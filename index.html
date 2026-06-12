@@ -1094,9 +1094,8 @@
            (L6-L7) stay readable instead of ellipsizing into the indent. */
         .data-table td:first-child,
         .data-table th:first-child {
-            width: var(--leader-col-width, 200px);
-            min-width: 160px;
-            max-width: var(--leader-col-width, 240px);
+            width: auto;
+            min-width: var(--leader-col-width, 160px);
             overflow: visible;
         }
 
@@ -1105,6 +1104,13 @@
         .data-table th:not(:first-child) {
             width: 150px;
             min-width: 140px;
+            max-width: 180px;
+        }
+
+        .metric-cell,
+        .metric-value,
+        .metric-delta {
+            text-align: right !important;
         }
 
         /* Header */
@@ -8436,6 +8442,7 @@
                 if (isSplitEnabled) {
                     // 1. Total cell
                     const tdTotal = document.createElement('td');
+                    tdTotal.className = 'metric-cell';
                     const rawVal = rowData.node.metrics[col.displayName];
                     const currentVal = resolveCellVal(rawVal, col.type);
                     tdTotal.innerHTML = buildMetricCellHTML(rowData.node, col, currentVal, prevMetrics, hasPrev, col.displayName);
@@ -8448,6 +8455,7 @@
                     // 2. Per tool cells
                     activeTools.forEach(tool => {
                         const tdTool = document.createElement('td');
+                        tdTool.className = 'metric-cell';
                         const sortKeyTool = col.displayName + '__' + tool;
                         const rawToolVal = rowData.node.metrics[sortKeyTool];
                         const toolVal = resolveCellVal(rawToolVal, col.type);
@@ -8459,6 +8467,7 @@
                     });
                 } else {
                     const td = document.createElement('td');
+                    td.className = 'metric-cell';
                     const rawVal = rowData.node.metrics[col.displayName];
                     const currentVal = resolveCellVal(rawVal, col.type);
                     td.innerHTML = buildMetricCellHTML(rowData.node, col, currentVal, prevMetrics, hasPrev, col.displayName);
@@ -8524,7 +8533,7 @@
                 const colgroup = document.createElement('colgroup');
                 for (let i = 0; i < colCount; i++) {
                     const col = document.createElement('col');
-                    col.style.width = (i === 0 ? 200 : 150) + 'px';
+                    col.style.width = i === 0 ? 'auto' : '150px';
                     colgroup.appendChild(col);
                 }
                 table.insertBefore(colgroup, table.firstChild);
@@ -8710,7 +8719,7 @@
             if (!isSplitEnabled) {
                 const colgroup = document.createElement('colgroup');
                 const colLeader = document.createElement('col');
-                colLeader.style.width = leaderColWidth + 'px';
+                colLeader.style.width = 'auto';
                 colgroup.appendChild(colLeader);
                 displayColDefs.forEach(() => {
                     const c = document.createElement('col');
@@ -8754,6 +8763,7 @@
 
                     // Row 2: Total sub-column
                     const thTotal = document.createElement('th');
+                    thTotal.className = 'metric-cell';
                     thTotal.id = `header-metric-${colIdx}-total`;
                     const sortKeyTotal = col.displayName;
                     const isTotalActive = (activeSortCol === sortKeyTotal);
@@ -8776,6 +8786,7 @@
                     // Row 2: Tool sub-columns
                     activeTools.forEach((tool, tIdx) => {
                         const thTool = document.createElement('th');
+                        thTool.className = 'metric-cell';
                         thTool.id = `header-metric-${colIdx}-tool-${tIdx}`;
                         const sortKeyTool = col.displayName + '__' + tool;
                         const isToolActive = (activeSortCol === sortKeyTool);
@@ -8815,6 +8826,7 @@
                 // Sortable th factory shared by rowSpan-2 singles and row-2 subs.
                 const makeSortableTh = (col, label, idSuffix) => {
                     const th = document.createElement('th');
+                    th.className = 'metric-cell';
                     th.id = 'header-metric-' + idSuffix;
                     const isColActive = (activeSortCol === col.displayName);
                     if (isColActive) th.classList.add('active-sort');
@@ -8900,6 +8912,7 @@
 
                 displayColDefs.forEach((col, i) => {
                     const th = document.createElement('th');
+                    th.className = 'metric-cell';
                     th.id = 'header-metric-' + i;
                     const isColActive = (activeSortCol === col.displayName);
                     if (isColActive) {
