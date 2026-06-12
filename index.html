@@ -2130,39 +2130,7 @@
                 provide per-tool columns side-by-side. The extension detects this automatically.
             </div>
 
-            <!-- Legacy: section-toolaware placeholder (JS may call toggleSection on this) -->
-            <div id="section-toolaware" style="display:none"></div>
 
-            <!-- Legacy Multi-Tool Splitting -->
-            <div class="step-divider">🛠️ Legacy Multi-Tool Column Splitting</div>
-            <div id="section-multitool">
-                <p class="cfg-hint" style="margin-bottom:10px">Superseded by the Tool-Aware worksheets above. Enable
-                    only if upgrading from an older configuration.</p>
-                <div class="cfg-checkbox-row">
-                    <input type="checkbox" id="cfg-tool-split" onchange="toggleToolSplitUI()">
-                    <label for="cfg-tool-split">Enable Real-Time Multi-Tool Column Splitting</label>
-                </div>
-                <div id="tool-split-details" style="display:none; margin-top:12px;" class="cfg-row-3">
-                    <div>
-                        <label class="cfg-label">Tool Dimension Column</label>
-                        <select id="cfg-tool-col" class="cfg-select">
-                            <option value="">— Select Column —</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="cfg-label">Active Users Metric Column</label>
-                        <select id="cfg-active-user-col" class="cfg-select">
-                            <option value="">— Select Metric —</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="cfg-label">Email ID Column (for distinct count)</label>
-                        <select id="cfg-email-col" class="cfg-select">
-                            <option value="">— None / Select Column —</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
 
             <!-- ── KPI Tiles Configuration ──────────────────────────────── -->
             <div class="step-divider">📊 KPI Tiles</div>
@@ -2201,14 +2169,7 @@
             <div id="kpi-tiles-config-list" class="kpi-config-cards"></div>
             <button class="btn-secondary" onclick="addKpiTileConfig()">+ Add KPI Tile</button>
 
-            <!-- Backward-compat hidden selects (section-data) -->
-            <div id="section-data" style="display:none">
-                <select id="cfg-current-sheet" class="cfg-select"></select>
-                <select id="cfg-previous-sheet" class="cfg-select">
-                    <option value="">— None —</option>
-                </select>
-                <div id="column-preview"></div>
-            </div>
+
         </div>
 
         <!-- ══ STEP 2: Metrics ═══════════════════════════════════════════ -->
@@ -2734,10 +2695,6 @@
         let allPrevCols = [];        // All columns from prev sheet (for config)
         let availableParameters = [];
         let availableWorksheets = [];
-        let measureNamesIdx = -1;
-        let measureValuesIdx = -1;
-        let firstMeasureName = null;
-        let activeTools = [];
         let emailColIdx = -1;
 
         /* ================================================================
@@ -3026,12 +2983,7 @@
             });
         }
 
-        function parseKpiValue(s) {
-            if (s === undefined || s === null) return null;
-            s = s.toString().trim();
-            if (s === '' || s === '—' || s === 'N/A' || s === 'NA') return null;
-            return s;
-        }
+
 
         // ── Raw DataTable cache ─────────────────────────────────────────────────
         // Caches the four fetched DataTables keyed by filter signature.
@@ -4155,10 +4107,6 @@
         // signature. The fast-path cache guard now checks BOTH so a team
         // change while date/tool are unchanged always causes a cache miss.
         let lastTeamExplicitPaths = null;
-        // Cached unfiltered tree from the last full fetch. Used when only the
-        // team selection (settings) changed and we want to re-render with a
-        // different visibility filter without re-querying Tableau.
-        let lastBuiltTreeSignature = null;
         // When true, the next fetchDataAndRender will fully collapse the tree
         // regardless of the configured defaultExpandLevel. Set by the
         // sync-parameter handler so Cancel All / Select All / any
@@ -4494,27 +4442,7 @@
             const dashboard = tableau.extensions.dashboardContent.dashboard;
             availableWorksheets = dashboard.worksheets.map(w => w.name);
 
-            // Populate worksheet dropdowns
-            const curSelect = document.getElementById('cfg-current-sheet');
-            const prevSelect = document.getElementById('cfg-previous-sheet');
-            curSelect.innerHTML = '<option value="">— Select Worksheet —</option>';
-            prevSelect.innerHTML = '<option value="">— None —</option>';
-            availableWorksheets.forEach(name => {
-                const esc = escHtml(name);
-                curSelect.innerHTML += `<option value="${esc}">${esc}</option>`;
-                prevSelect.innerHTML += `<option value="${esc}">${esc}</option>`;
-            });
 
-
-            // Load saved values (with backward compat)
-            const savedCurrent = getSetting('currentSheet', '') || getSetting('sheet', '');
-            const savedPrev = getSetting('previousSheet', '') || getSetting('sheetPrev', '');
-            if (savedCurrent) curSelect.value = savedCurrent;
-            if (savedPrev) prevSelect.value = savedPrev;
-
-            // When sheet selection changes, reload columns for mapping dropdowns
-            curSelect.addEventListener('change', () => loadColumnsForMapping());
-            prevSelect.addEventListener('change', () => loadColumnsForMapping());
 
             // Hierarchy auto-detect toggle
             const hierAuto = document.getElementById('cfg-hier-auto');
@@ -4620,26 +4548,7 @@
                 }
             }
 
-            // Load Multi-Tool settings
-            const toolSplit = getSetting('toolSplitEnabled', 'false') === 'true';
-            const toolCol = getSetting('toolColumn', '');
-            const activeUserCol = getSetting('activeUserColumn', '');
-            const emailCol = getSetting('emailColumn', '');
 
-            const splitCheckbox = document.getElementById('cfg-tool-split');
-            if (splitCheckbox) {
-                splitCheckbox.checked = toolSplit;
-                toggleToolSplitUI();
-            }
-
-            const toolSel = document.getElementById('cfg-tool-col');
-            if (toolSel) toolSel.dataset.pendingValue = toolCol;
-
-            const activeUserSel = document.getElementById('cfg-active-user-col');
-            if (activeUserSel) activeUserSel.dataset.pendingValue = activeUserCol;
-
-            const emailSel = document.getElementById('cfg-email-col');
-            if (emailSel) emailSel.dataset.pendingValue = emailCol;
 
             // Load Tool-Aware Metric Source settings
             const splitMetricsSelect = document.getElementById('cfg-split-metrics-sheet');
@@ -4669,6 +4578,12 @@
                         renderColDisplayList();
                     });
                     verifyWorksheetSelection('split');
+                    loadColumnsForMapping();
+                });
+            }
+            if (splitMetricsPrevSelect) {
+                splitMetricsPrevSelect.addEventListener('change', () => {
+                    loadColumnsForMapping();
                 });
             }
             if (totalMetricsSelect) {
@@ -4708,8 +4623,7 @@
                 document.getElementById('hier-mappings-container').innerHTML = '';
                 savedHM.forEach(h => addHierarchyMapping(h.level, h.column));
 
-                // Populate Multi-Tool select options
-                populateMultiToolSelectors();
+
             });
 
             // ── KPI Tiles Config ──
@@ -4973,76 +4887,20 @@
         function renderColDisplayList() {
             const container = document.getElementById('col-display-list');
             if (!container) return;
-            container.innerHTML = '';
-
-            colDisplayState.forEach((item, idx) => {
-                const row = document.createElement('div');
-                row.className = 'col-display-row';
-                row.dataset.key = item.key;
-
-                // Move buttons
-                const moveDiv = document.createElement('div');
-                moveDiv.className = 'move-btns';
-
-                const btnUp = document.createElement('button');
-                btnUp.className = 'move-btn';
-                btnUp.innerHTML = '▲';
-                btnUp.disabled = idx === 0;
-                btnUp.addEventListener('click', () => moveColGroup(idx, -1));
-
-                const btnDown = document.createElement('button');
-                btnDown.className = 'move-btn';
-                btnDown.innerHTML = '▼';
-                btnDown.disabled = idx === colDisplayState.length - 1;
-                btnDown.addEventListener('click', () => moveColGroup(idx, 1));
-
-                moveDiv.appendChild(btnUp);
-                moveDiv.appendChild(btnDown);
-                row.appendChild(moveDiv);
-
-                // Column Key Label (read-only)
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'group-label';
-                nameSpan.textContent = item.key;
-                row.appendChild(nameSpan);
-
-                // Custom Label Input
-                const labelInput = document.createElement('input');
-                labelInput.type = 'text';
-                labelInput.className = 'rename-input';
-                labelInput.placeholder = 'Custom Label';
-                labelInput.value = item.label === item.key ? '' : item.label;
-                labelInput.addEventListener('input', () => {
-                    colDisplayState[idx].label = labelInput.value.trim() || item.key;
-                });
-                row.appendChild(labelInput);
-
-                // Hover Info Input
-                const descInput = document.createElement('input');
-                descInput.type = 'text';
-                descInput.className = 'desc-input';
-                descInput.placeholder = 'Hover Info';
-                descInput.value = item.description || '';
-                descInput.addEventListener('input', () => {
-                    colDisplayState[idx].description = descInput.value.trim();
-                });
-                row.appendChild(descInput);
-
-                // Visibility toggle
-                const visDiv = document.createElement('div');
-                visDiv.className = 'col-display-vis-toggle';
-                const visCheck = document.createElement('input');
-                visCheck.type = 'checkbox';
-                visCheck.id = 'col-vis-' + item.key.replace(/\s+/g, '-');
-                visCheck.checked = item.visible;
-                visCheck.addEventListener('change', () => {
-                    colDisplayState[idx].visible = visCheck.checked;
-                });
-                visDiv.appendChild(visCheck);
-                row.appendChild(visDiv);
-
-                container.appendChild(row);
-            });
+            container.innerHTML = colDisplayState.map((item, idx) => `
+                <div class="col-display-row" data-key="${escHtml(item.key)}">
+                    <div class="move-btns">
+                        <button class="move-btn" onclick="moveColGroup(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                        <button class="move-btn" onclick="moveColGroup(${idx}, 1)" ${idx === colDisplayState.length - 1 ? 'disabled' : ''}>▼</button>
+                    </div>
+                    <span class="group-label">${escHtml(item.key)}</span>
+                    <input type="text" class="rename-input" placeholder="Custom Label" value="${escHtml(item.label === item.key ? '' : item.label)}" oninput="colDisplayState[${idx}].label = this.value.trim() || '${escHtml(item.key)}'">
+                    <input type="text" class="desc-input" placeholder="Hover Info" value="${escHtml(item.description || '')}" oninput="colDisplayState[${idx}].description = this.value.trim()">
+                    <div class="col-display-vis-toggle">
+                        <input type="checkbox" id="col-vis-${escHtml(item.key.replace(/\s+/g, '-'))}" ${item.visible ? 'checked' : ''} onchange="colDisplayState[${idx}].visible = this.checked">
+                    </div>
+                </div>
+            `).join('');
         }
 
         /** Move a column up or down in the order */
@@ -5239,8 +5097,8 @@
         /* Load column names from selected worksheets for mapping dropdowns */
         async function loadColumnsForMapping() {
             const dashboard = tableau.extensions.dashboardContent.dashboard;
-            const curName = document.getElementById('cfg-current-sheet').value;
-            const prevName = document.getElementById('cfg-previous-sheet').value;
+            const curName = document.getElementById('cfg-split-metrics-sheet')?.value;
+            const prevName = document.getElementById('cfg-split-metrics-prev-sheet')?.value;
             allCurrentCols = [];
             allPrevCols = [];
 
@@ -5383,17 +5241,71 @@
             return div.innerHTML;
         }
 
+        function createElementFromHTML(htmlString) {
+            const div = document.createElement('div');
+            div.innerHTML = htmlString.trim();
+            return div.firstElementChild;
+        }
+
         /* ---- Metric Column Mapping ---- */
         function addMetricMapping(currentCol = '', prevCol = '', type = 'number', displayName = '',
             denCurCol = '', denPrevCol = '', isCalculated = false, numCol = '', denCol = '') {
             const container = document.getElementById('metric-mappings-container');
-            const row = document.createElement('div');
-            row.className = 'mapping-row';
 
-            // Current column
-            const curSel = document.createElement('select');
-            curSel.className = 'map-cur';
+            const row = createElementFromHTML(`
+                <div class="mapping-row">
+                    <select class="map-cur"></select>
+                    <select class="map-prev"></select>
+                    <select class="map-type">
+                        <option value="number" ${type === 'number' ? 'selected' : ''}>Number</option>
+                        <option value="number_k" ${type === 'number_k' ? 'selected' : ''}>Number (K/M)</option>
+                        <option value="percent" ${type === 'percent' ? 'selected' : ''}>Percent</option>
+                        <option value="ratio" ${type === 'ratio' ? 'selected' : ''}>Ratio</option>
+                    </select>
+                    <input type="text" class="map-name" placeholder="Display Label" value="${escHtml(displayName)}">
+                    <button class="btn-remove">✕</button>
+                </div>
+            `);
+
+            const ratioRow = createElementFromHTML(`
+                <div class="mapping-row ratio-sub-row" style="display: ${type === 'ratio' ? 'grid' : 'none'}; padding-left: 20px; grid-template-columns: 1fr 1fr 100px 1fr 32px;">
+                    <select class="map-den-cur"></select>
+                    <select class="map-den-prev"></select>
+                    <span style="font-size:10px; color:#a0aec0; grid-column: span 2; padding-left: 4px;">↳ Denominator columns</span>
+                    <span></span>
+                </div>
+            `);
+
+            const percentRow = createElementFromHTML(`
+                <div class="mapping-row percent-sub-row" style="display: ${type === 'percent' ? 'grid' : 'none'}; padding-left: 20px; grid-template-columns: auto 1fr 1fr 32px; align-items: center; gap: 8px;">
+                    <label style="font-size:11px; color:#4a5568; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                        <input type="checkbox" class="map-is-calc" ${isCalculated ? 'checked' : ''}>
+                        Calculate from other display labels
+                    </label>
+                    <select class="map-num-col" style="display: ${isCalculated ? 'block' : 'none'};" data-pending-value="${escHtml(numCol)}"></select>
+                    <select class="map-den-col" style="display: ${isCalculated ? 'block' : 'none'};" data-pending-value="${escHtml(denCol)}"></select>
+                    <span></span>
+                </div>
+            `);
+
+            const curSel = row.querySelector('.map-cur');
+            const prevSel = row.querySelector('.map-prev');
+            const typeSel = row.querySelector('.map-type');
+            const nameInput = row.querySelector('.map-name');
+            const btnRm = row.querySelector('.btn-remove');
+
+            const denCurSel = ratioRow.querySelector('.map-den-cur');
+            const denPrevSel = ratioRow.querySelector('.map-den-prev');
+
+            const calcCheckbox = percentRow.querySelector('.map-is-calc');
+            const numSel = percentRow.querySelector('.map-num-col');
+            const denSel = percentRow.querySelector('.map-den-col');
+
             populateSelectOptions(curSel, allCurrentCols, currentCol);
+            populateSelectOptions(prevSel, allPrevCols, prevCol, true);
+            populateSelectOptions(denCurSel, allCurrentCols, denCurCol, true);
+            populateSelectOptions(denPrevSel, allPrevCols, denPrevCol, true);
+
             curSel.addEventListener('change', () => {
                 if (!nameInput.value) {
                     const col = allCurrentCols.find(c => c.raw === curSel.value);
@@ -5404,122 +5316,19 @@
                 }
             });
 
-            // Previous column
-            const prevSel = document.createElement('select');
-            prevSel.className = 'map-prev';
-            populateSelectOptions(prevSel, allPrevCols, prevCol, true);
-
-            // Type selector
-            const typeSel = document.createElement('select');
-            typeSel.className = 'map-type';
-            typeSel.innerHTML = `
-                <option value="number" ${type === 'number' ? 'selected' : ''}>Number</option>
-                <option value="number_k" ${type === 'number_k' ? 'selected' : ''}>Number (K/M)</option>
-                <option value="percent" ${type === 'percent' ? 'selected' : ''}>Percent</option>
-                <option value="ratio" ${type === 'ratio' ? 'selected' : ''}>Ratio</option>
-            `;
-
-            // Display name
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'map-name';
-            nameInput.placeholder = 'Display Label';
-            nameInput.value = displayName;
-
-            // Remove button
-            const btnRm = document.createElement('button');
-            btnRm.className = 'btn-remove';
-            btnRm.textContent = '✕';
             btnRm.onclick = () => {
                 row.remove();
-                if (ratioRow) ratioRow.remove();
-                if (percentRow) percentRow.remove();
+                ratioRow.remove();
+                percentRow.remove();
                 updateCalculatedOptions();
             };
 
-            row.appendChild(curSel);
-            row.appendChild(prevSel);
-            row.appendChild(typeSel);
-            row.appendChild(nameInput);
-            row.appendChild(btnRm);
-            container.appendChild(row);
-
-            // Ratio sub-row for denominator columns
-            const ratioRow = document.createElement('div');
-            ratioRow.className = 'mapping-row ratio-sub-row';
-            ratioRow.style.display = type === 'ratio' ? 'grid' : 'none';
-            ratioRow.style.paddingLeft = '20px';
-            ratioRow.style.gridTemplateColumns = '1fr 1fr 100px 1fr 32px';
-
-            const denCurSel = document.createElement('select');
-            denCurSel.className = 'map-den-cur';
-            populateSelectOptions(denCurSel, allCurrentCols, denCurCol, true);
-
-            const denPrevSel = document.createElement('select');
-            denPrevSel.className = 'map-den-prev';
-            populateSelectOptions(denPrevSel, allPrevCols, denPrevCol, true);
-
-            const denLabel = document.createElement('span');
-            denLabel.style.cssText = 'font-size:10px; color:#a0aec0; grid-column: span 2; padding-left: 4px;';
-            denLabel.textContent = '↳ Denominator columns';
-
-            const spacer = document.createElement('span');
-
-            ratioRow.appendChild(denCurSel);
-            ratioRow.appendChild(denPrevSel);
-            ratioRow.appendChild(denLabel);
-            ratioRow.appendChild(spacer);
-            container.appendChild(ratioRow);
-
-            // Percent sub-row for calculation
-            const percentRow = document.createElement('div');
-            percentRow.className = 'mapping-row percent-sub-row';
-            percentRow.style.display = type === 'percent' ? 'grid' : 'none';
-            percentRow.style.paddingLeft = '20px';
-            percentRow.style.gridTemplateColumns = 'auto 1fr 1fr 32px';
-            percentRow.style.alignItems = 'center';
-            percentRow.style.gap = '8px';
-
-            const calcCheckboxContainer = document.createElement('label');
-            calcCheckboxContainer.style.cssText = 'font-size:11px; color:#4a5568; display:flex; align-items:center; gap:4px; cursor:pointer;';
-            const calcCheckbox = document.createElement('input');
-            calcCheckbox.type = 'checkbox';
-            calcCheckbox.className = 'map-is-calc';
-            calcCheckbox.checked = isCalculated;
-            calcCheckboxContainer.appendChild(calcCheckbox);
-            calcCheckboxContainer.appendChild(document.createTextNode('Calculate from other display labels'));
-
-            const numSel = document.createElement('select');
-            numSel.className = 'map-num-col';
-            numSel.style.display = isCalculated ? 'block' : 'none';
-            numSel.dataset.pendingValue = numCol;
-
-            const denSel = document.createElement('select');
-            denSel.className = 'map-den-col';
-            denSel.style.display = isCalculated ? 'block' : 'none';
-            denSel.dataset.pendingValue = denCol;
-
-            const percentSpacer = document.createElement('span');
-
-            percentRow.appendChild(calcCheckboxContainer);
-            percentRow.appendChild(numSel);
-            percentRow.appendChild(denSel);
-            percentRow.appendChild(percentSpacer);
-            container.appendChild(percentRow);
-
             const updateRowVisibility = () => {
                 const isCalc = calcCheckbox.checked && typeSel.value === 'percent';
-                if (isCalc) {
-                    curSel.style.visibility = 'hidden';
-                    prevSel.style.visibility = 'hidden';
-                    numSel.style.display = 'block';
-                    denSel.style.display = 'block';
-                } else {
-                    curSel.style.visibility = 'visible';
-                    prevSel.style.visibility = 'visible';
-                    numSel.style.display = 'none';
-                    denSel.style.display = 'none';
-                }
+                curSel.style.visibility = isCalc ? 'hidden' : 'visible';
+                prevSel.style.visibility = isCalc ? 'hidden' : 'visible';
+                numSel.style.display = isCalc ? 'block' : 'none';
+                denSel.style.display = isCalc ? 'block' : 'none';
             };
 
             calcCheckbox.addEventListener('change', () => {
@@ -5527,11 +5336,8 @@
                 updateCalculatedOptions();
             });
 
-            nameInput.addEventListener('input', () => {
-                updateCalculatedOptions();
-            });
+            nameInput.addEventListener('input', updateCalculatedOptions);
 
-            // Toggle sub-rows on type change
             typeSel.addEventListener('change', () => {
                 ratioRow.style.display = typeSel.value === 'ratio' ? 'grid' : 'none';
                 percentRow.style.display = typeSel.value === 'percent' ? 'grid' : 'none';
@@ -5539,9 +5345,64 @@
                 updateCalculatedOptions();
             });
 
-            // Initial visibility
+            container.appendChild(row);
+            container.appendChild(ratioRow);
+            container.appendChild(percentRow);
+
             updateRowVisibility();
             updateCalculatedOptions();
+        }
+
+        /* ---- Hierarchy Level Mapping ---- */
+        function addHierarchyMapping(level = '', column = '') {
+            const container = document.getElementById('hier-mappings-container');
+            const existingCount = container.children.length;
+            const levelNum = level || ('L' + (existingCount + 2));
+
+            const row = createElementFromHTML(`
+                <div class="hier-mapping-row">
+                    <div class="hier-level-badge">${levelNum}</div>
+                    <select class="hier-col-select"></select>
+                    <button class="btn-remove" onclick="this.parentElement.remove()">✕</button>
+                </div>
+            `);
+
+            const colSel = row.querySelector('.hier-col-select');
+            populateSelectOptions(colSel, allCurrentCols.filter(c => c.type === 'string'), column, true);
+            container.appendChild(row);
+        }
+
+        /* ---- Parameter Actions (preserved) ---- */
+        function addParameterAction(paramName = '', level = '') {
+            const container = document.getElementById('param-actions-container');
+            const row = createElementFromHTML(`
+                <div class="action-row param-action-row">
+                    <select class="param-select">
+                        <option value="">— Select Parameter —</option>
+                        ${availableParameters.map(p => `<option value="${escHtml(p)}" ${p === paramName ? 'selected' : ''}>${escHtml(p)}</option>`).join('')}
+                    </select>
+                    <input type="text" placeholder="Level (optional)" value="${escHtml(level)}" class="level-input" title="If set, action only fires for nodes at this hierarchy level.">
+                    <button class="btn-remove" onclick="this.parentElement.remove()">✕</button>
+                </div>
+            `);
+            container.appendChild(row);
+        }
+
+        /* ---- Filter Actions (preserved) ---- */
+        function addFilterAction(worksheet = '', fieldName = '', level = '') {
+            const container = document.getElementById('filter-actions-container');
+            const row = createElementFromHTML(`
+                <div class="action-row filter-action-row">
+                    <select class="ws-select">
+                        <option value="">— Select Worksheet —</option>
+                        ${availableWorksheets.map(w => `<option value="${escHtml(w)}" ${w === worksheet ? 'selected' : ''}>${escHtml(w)}</option>`).join('')}
+                    </select>
+                    <input type="text" placeholder="Target Field Name" value="${escHtml(fieldName)}" class="field-input">
+                    <input type="text" placeholder="Level (optional)" value="${escHtml(level)}" class="level-input">
+                    <button class="btn-remove" onclick="this.parentElement.remove()">✕</button>
+                </div>
+            `);
+            container.appendChild(row);
         }
 
         function updateCalculatedOptions() {
@@ -5608,163 +5469,6 @@
             updateMultiToolMetricOptions();
         }
 
-        function toggleToolSplitUI() {
-            const enabled = document.getElementById('cfg-tool-split').checked;
-            document.getElementById('tool-split-details').style.display = enabled ? 'grid' : 'none';
-        }
-
-        function populateMultiToolSelectors() {
-            const toolSel = document.getElementById('cfg-tool-col');
-            const emailSel = document.getElementById('cfg-email-col');
-            const activeUserSel = document.getElementById('cfg-active-user-col');
-
-            if (!toolSel || !emailSel || !activeUserSel) return;
-
-            const savedTool = toolSel.dataset.pendingValue !== undefined ? toolSel.dataset.pendingValue : toolSel.value;
-            const savedEmail = emailSel.dataset.pendingValue !== undefined ? emailSel.dataset.pendingValue : emailSel.value;
-
-            // Populate Tool and Email columns from allCurrentCols
-            let toolHtml = '<option value="">— Select Column —</option>';
-            let emailHtml = '<option value="">— None / Select Column —</option>';
-
-            allCurrentCols.forEach(c => {
-                if (!c.isPivot) {
-                    toolHtml += `<option value="${escHtml(c.raw)}" ${c.raw === savedTool ? 'selected' : ''}>${escHtml(c.display)} (${escHtml(c.raw)})</option>`;
-                    emailHtml += `<option value="${escHtml(c.raw)}" ${c.raw === savedEmail ? 'selected' : ''}>${escHtml(c.display)} (${escHtml(c.raw)})</option>`;
-                }
-            });
-
-            toolSel.innerHTML = toolHtml;
-            emailSel.innerHTML = emailHtml;
-
-            // Clear pending values
-            if (toolSel.dataset.pendingValue !== undefined) delete toolSel.dataset.pendingValue;
-            if (emailSel.dataset.pendingValue !== undefined) delete emailSel.dataset.pendingValue;
-
-            updateMultiToolMetricOptions();
-        }
-
-        function updateMultiToolMetricOptions() {
-            const activeUserSel = document.getElementById('cfg-active-user-col');
-            if (!activeUserSel) return;
-
-            const savedActiveUser = activeUserSel.dataset.pendingValue !== undefined ? activeUserSel.dataset.pendingValue : activeUserSel.value;
-
-            const labels = [];
-            const rows = document.querySelectorAll('#metric-mappings-container > .mapping-row:not(.ratio-sub-row):not(.percent-sub-row)');
-            rows.forEach(row => {
-                const nameInput = row.querySelector('.map-name');
-                if (nameInput && nameInput.value.trim()) {
-                    labels.push(nameInput.value.trim());
-                }
-            });
-
-            let metricHtml = '<option value="">— Select Metric —</option>';
-            labels.forEach(l => {
-                metricHtml += `<option value="${escHtml(l)}" ${l === savedActiveUser ? 'selected' : ''}>${escHtml(l)}</option>`;
-            });
-
-            activeUserSel.innerHTML = metricHtml;
-            if (activeUserSel.dataset.pendingValue !== undefined) delete activeUserSel.dataset.pendingValue;
-        }
-
-        /* ---- Hierarchy Level Mapping ---- */
-        function addHierarchyMapping(level = '', column = '') {
-            const container = document.getElementById('hier-mappings-container');
-            const existingCount = container.children.length;
-            const levelNum = level || ('L' + (existingCount + 2));
-
-            const row = document.createElement('div');
-            row.className = 'hier-mapping-row';
-
-            const badge = document.createElement('div');
-            badge.className = 'hier-level-badge';
-            badge.textContent = levelNum;
-
-            const colSel = document.createElement('select');
-            colSel.className = 'hier-col-select';
-            populateSelectOptions(colSel, allCurrentCols.filter(c => c.type === 'string'), column, true);
-
-            const btnRm = document.createElement('button');
-            btnRm.className = 'btn-remove';
-            btnRm.textContent = '✕';
-            btnRm.onclick = () => row.remove();
-
-            row.appendChild(badge);
-            row.appendChild(colSel);
-            row.appendChild(btnRm);
-            container.appendChild(row);
-        }
-
-        /* ---- Parameter Actions (preserved) ---- */
-        function addParameterAction(paramName = '', level = '') {
-            const container = document.getElementById('param-actions-container');
-            const row = document.createElement('div');
-            row.className = 'action-row param-action-row';
-
-            const paramSel = document.createElement('select');
-            let opts = '<option value="">— Select Parameter —</option>';
-            availableParameters.forEach(p => {
-                opts += `<option value="${p}" ${p === paramName ? 'selected' : ''}>${p}</option>`;
-            });
-            paramSel.innerHTML = opts;
-            paramSel.className = 'param-select';
-
-            const levelInput = document.createElement('input');
-            levelInput.type = 'text';
-            levelInput.placeholder = 'Level (optional)';
-            levelInput.value = level;
-            levelInput.className = 'level-input';
-            levelInput.title = 'If set, action only fires for nodes at this hierarchy level.';
-
-            const btnRm = document.createElement('button');
-            btnRm.className = 'btn-remove';
-            btnRm.textContent = '✕';
-            btnRm.onclick = () => row.remove();
-
-            row.appendChild(paramSel);
-            row.appendChild(levelInput);
-            row.appendChild(btnRm);
-            container.appendChild(row);
-        }
-
-        /* ---- Filter Actions (preserved) ---- */
-        function addFilterAction(worksheet = '', fieldName = '', level = '') {
-            const container = document.getElementById('filter-actions-container');
-            const row = document.createElement('div');
-            row.className = 'action-row filter-action-row';
-
-            const wsSel = document.createElement('select');
-            let opts = '<option value="">— Select Worksheet —</option>';
-            availableWorksheets.forEach(w => {
-                opts += `<option value="${w}" ${w === worksheet ? 'selected' : ''}>${w}</option>`;
-            });
-            wsSel.innerHTML = opts;
-            wsSel.className = 'ws-select';
-
-            const fieldInput = document.createElement('input');
-            fieldInput.type = 'text';
-            fieldInput.placeholder = 'Target Field Name';
-            fieldInput.value = fieldName;
-            fieldInput.className = 'field-input';
-
-            const levelInput = document.createElement('input');
-            levelInput.type = 'text';
-            levelInput.placeholder = 'Level (optional)';
-            levelInput.value = level;
-            levelInput.className = 'level-input';
-
-            const btnRm = document.createElement('button');
-            btnRm.className = 'btn-remove';
-            btnRm.textContent = '✕';
-            btnRm.onclick = () => row.remove();
-
-            row.appendChild(wsSel);
-            row.appendChild(fieldInput);
-            row.appendChild(levelInput);
-            row.appendChild(btnRm);
-            container.appendChild(row);
-        }
         /* ---- Save Configuration ---- */
         async function saveConfig() {
             // Pre-save validation: verify tool-aware worksheets are real and usable
@@ -5914,16 +5618,7 @@
             });
             s.set('filterActions', JSON.stringify(filterActions));
 
-            // Multi-Tool Settings
-            const toolSplit = document.getElementById('cfg-tool-split')?.checked || false;
-            const toolCol = document.getElementById('cfg-tool-col')?.value || '';
-            const activeUserCol = document.getElementById('cfg-active-user-col')?.value || '';
-            const emailCol = document.getElementById('cfg-email-col')?.value || '';
 
-            s.set('toolSplitEnabled', toolSplit ? 'true' : 'false');
-            s.set('toolColumn', toolCol);
-            s.set('activeUserColumn', activeUserCol);
-            s.set('emailColumn', emailCol);
 
             // Tool-Aware Metric Source Settings
             s.set('splitMetricsSheet', document.getElementById('cfg-split-metrics-sheet')?.value || '');
@@ -6348,7 +6043,6 @@
                 const splitPrevWs = !splitPrevSameSheet ? dashboard.worksheets.find(w => w.name === splitMetricsPrevSheetName) : null;
                 const totalPrevWs = !totalPrevSameSheet ? dashboard.worksheets.find(w => w.name === totalMetricsPrevSheetName) : null;
                 const leaderHierSheetName = getSetting('leaderHierarchySheet', 'Leader Filter');
-                const leaderHierWs = leaderHierSheetName ? dashboard.worksheets.find(w => w.name === leaderHierSheetName) : null;
 
                 if (!splitWs) {
                     if (!isRefresh) {
@@ -6557,7 +6251,6 @@
                             // silently reading index-0 data as if it were the right column.
                             (function verifyFetchedColumns() {
                                 const dynColField = getSetting('dynamicColumnsField', 'Dynamic Columns');
-                                const splitAUCol = getSetting('splitActiveUsersCol', 'Active Users - Metric');
                                 const totalAUCol = getSetting('totalActiveUsersCol', 'Total Active User');
 
                                 // Check split sheet has Dynamic Columns field
@@ -6717,21 +6410,14 @@
                             // GCA credit columns/tiles ("currently 0 across all records").
                             const GCA_TOOL_NAME = 'Google Code Assist';
                             const _splitCUIdx = findColIdx(splitDataTable.columns, splitCU);
-                            let _gcaCreditCheck = false;
-                            if (_splitCUIdx >= 0 && dynColIdx >= 0) {
-                                for (const _row of splitDataTable.data) {
-                                    const _dv = _row[dynColIdx]?.value;
-                                    if (_dv && (
-                                        _dv === GCA_TOOL_NAME ||
-                                        _dv.startsWith(GCA_TOOL_NAME + '::')
-                                    )) {
-                                        const _cv = _row[_splitCUIdx]?.value;
-                                        const _n = typeof _cv === 'number' ? _cv : parseFloat(_cv);
-                                        if (!isNaN(_n) && _n > 0) { _gcaCreditCheck = true; break; }
-                                    }
+                            _gcaCreditHasData = _splitCUIdx >= 0 && dynColIdx >= 0 && splitDataTable.data.some(_row => {
+                                const _dv = _row[dynColIdx]?.value;
+                                if (_dv && (_dv === GCA_TOOL_NAME || _dv.startsWith(GCA_TOOL_NAME + '::'))) {
+                                    const _cv = parseFloat(_row[_splitCUIdx]?.value);
+                                    return !isNaN(_cv) && _cv > 0;
                                 }
-                            }
-                            _gcaCreditHasData = _gcaCreditCheck;
+                                return false;
+                            });
 
                             // Mode is now driven by SELECTED tool count, not by
                             // every tool in Split-Metrics: single-tool pick → only
@@ -6904,7 +6590,7 @@
                             if (_selectedModelsParamValue && _selectedModelsParamValue !== 'all') {
                                 colDefs.forEach(c => { if (c.groupTool) expandedCreditTools.add(c.groupTool); });
                             }
-                            activeTools = [];
+
 
                             // Detect hierarchy columns DIRECTLY from splitDataTable and totalDataTable.
                             // This avoids cross-sheet fieldName mismatches that occur when currentSheet
@@ -7199,8 +6885,7 @@
                                 });
                             }
 
-                            // Sample a few paths to verify matching
-                            const samplePaths = splitDataTable.data.slice(0, 3).map(r => computeLeafPath(r, splitHierCols));
+
 
                             // Merge metrics from split data into tree nodes.
                             // dedupeSeen: colDefs flagged dedupeOncePerPath (the
@@ -7263,7 +6948,6 @@
                             // A mismatch means totalHierCols detected different column indices than
                             // splitHierCols, causing every total row to resolve to null and drop silently.
                             const sampleTotalPaths = totalDataTable.data.slice(0, 3).map(r => computeLeafPath(r, totalHierCols));
-                            const sampleTotalMatched = sampleTotalPaths.map(p => !!nodePathMap[p]);
 
                             // Build a leaf-name → node map as a fallback when full path lookup fails.
                             // This handles cases where the Total sheet has a shallower hierarchy
@@ -7506,18 +7190,10 @@
                                 const resolveForCol = (col, prevDT, pivot, distinctMeasureNames, isSelf) => {
                                     const explicit = explicitPrevForCol(col);
                                     if (pivot.isPivot) {
-                                        let selfMeasure = null;
-                                        if (isSelf) {
-                                            for (const mn of distinctMeasureNames) {
-                                                if (pivotMeasureMatches(mn, col.sourceCol)) { selfMeasure = mn; break; }
-                                            }
-                                        }
+                                        const selfMeasure = isSelf ? distinctMeasureNames.find(mn => pivotMeasureMatches(mn, col.sourceCol)) : null;
                                         if (explicit) {
-                                            // Exact-or-fuzzy match the explicit caption against the measure-names domain
-                                            for (const mn of distinctMeasureNames) {
-                                                if (selfMeasure && mn === selfMeasure) continue;
-                                                if (pivotMeasureMatches(mn, explicit)) return mn;
-                                            }
+                                            const match = distinctMeasureNames.find(mn => (!selfMeasure || mn !== selfMeasure) && pivotMeasureMatches(mn, explicit));
+                                            if (match) return match;
                                         }
                                         return resolvePrevMeasureName(col.sourceCol, distinctMeasureNames, selfMeasure);
                                     } else {
@@ -7971,9 +7647,7 @@
                     activeDefs.forEach(col => {
                         if (col.type === 'percent' && !col.isCalculated) {
                             node.metrics[col.displayName] = null;
-                            activeTools.forEach(tool => {
-                                node.metrics[col.displayName + '__' + tool] = null;
-                            });
+
                         }
                     });
                 }
@@ -7997,15 +7671,7 @@
                         const denVal = node.metrics[col.denCol] || 0;
                         node.metrics[col.displayName] = denVal !== 0 ? (numVal / denVal) * 100 : 0;
 
-                        // Per tool
-                        activeTools.forEach(tool => {
-                            const numToolKey = col.numCol + '__' + tool;
-                            const denToolKey = col.denCol + '__' + tool;
-                            const toolKey = col.displayName + '__' + tool;
-                            const numToolVal = node.metrics[numToolKey] || 0;
-                            const denToolVal = node.metrics[denToolKey] || 0;
-                            node.metrics[toolKey] = denToolVal !== 0 ? (numToolVal / denToolVal) * 100 : 0;
-                        });
+
                     }
                     // Tool-aware computed metrics: any colDef with sourceSheet 'computed'
                     // and a numerator/denominator. (None are configured now that only
@@ -8369,7 +8035,7 @@
         }
 
         function buildTableRow(rowData, rowIdx, colDefs, prevKeyMap, indent,
-            showToggle, isSplitEnabled, hasPrev,
+            showToggle, hasPrev,
             activeUserMetricName, emailColName, showInitials) {
             const tr = document.createElement('tr');
             tr.setAttribute('data-path', rowData.path);
@@ -8438,44 +8104,16 @@
             };
 
             colDefs.forEach((col, colIdx) => {
-                if (isSplitEnabled) {
-                    // 1. Total cell
-                    const tdTotal = document.createElement('td');
-                    tdTotal.className = 'metric-cell';
-                    const rawVal = rowData.node.metrics[col.displayName];
-                    const currentVal = resolveCellVal(rawVal, col.type);
-                    tdTotal.innerHTML = buildMetricCellHTML(rowData.node, col, currentVal, prevMetrics, hasPrev, col.displayName);
-                    const colLabel = col.headerLabel || col.displayName;
-                    tdTotal.title = (currentVal === null || currentVal === undefined)
-                        ? `${colLabel} (Total): —`
-                        : `${colLabel} (Total): ${formatNumber(Math.round(currentVal))}`;
-                    tr.appendChild(tdTotal);
-
-                    // 2. Per tool cells
-                    activeTools.forEach(tool => {
-                        const tdTool = document.createElement('td');
-                        tdTool.className = 'metric-cell';
-                        const sortKeyTool = col.displayName + '__' + tool;
-                        const rawToolVal = rowData.node.metrics[sortKeyTool];
-                        const toolVal = resolveCellVal(rawToolVal, col.type);
-                        tdTool.innerHTML = buildMetricCellHTML(rowData.node, col, toolVal, prevMetrics, hasPrev, sortKeyTool);
-                        tdTool.title = (toolVal === null || toolVal === undefined)
-                            ? `${colLabel} (${tool}): —`
-                            : `${colLabel} (${tool}): ${formatNumber(Math.round(toolVal))}`;
-                        tr.appendChild(tdTool);
-                    });
-                } else {
-                    const td = document.createElement('td');
-                    td.className = 'metric-cell';
-                    const rawVal = rowData.node.metrics[col.displayName];
-                    const currentVal = resolveCellVal(rawVal, col.type);
-                    td.innerHTML = buildMetricCellHTML(rowData.node, col, currentVal, prevMetrics, hasPrev, col.displayName);
-                    const cellLabel = col.headerLabel || col.displayName;
-                    td.title = (currentVal === null || currentVal === undefined)
-                        ? `${cellLabel}: —`
-                        : `${cellLabel}: ${formatNumber(Math.round(currentVal))}`;
-                    tr.appendChild(td);
-                }
+                const td = document.createElement('td');
+                td.className = 'metric-cell';
+                const rawVal = rowData.node.metrics[col.displayName];
+                const currentVal = resolveCellVal(rawVal, col.type);
+                td.innerHTML = buildMetricCellHTML(rowData.node, col, currentVal, prevMetrics, hasPrev, col.displayName);
+                const cellLabel = col.headerLabel || col.displayName;
+                td.title = (currentVal === null || currentVal === undefined)
+                    ? `${cellLabel}: —`
+                    : `${cellLabel}: ${formatNumber(Math.round(currentVal))}`;
+                tr.appendChild(td);
             });
 
             // Row click → actions
@@ -8626,12 +8264,11 @@
             const showInitials = getSetting('showInitials', 'true') !== 'false';
             const indent = parseInt(getSetting('indentPerLevel', '18'));
             const hasPrev = Object.keys(prevKeyMap).length > 0;
-            const isSplitEnabled = getSetting('toolSplitEnabled', 'false') === 'true' && activeTools.length > 0;
             // Grouped two-row header (provider split): driven by groupLabel
             // tags on the colDefs themselves, not by activeTools. Never true
             // in Type mode (those colDefs carry no groupLabel), so the Type
             // render path is untouched.
-            const hasGroups = !isSplitEnabled && colDefs.some(c => c.groupLabel);
+            const hasGroups = colDefs.some(c => c.groupLabel);
             // Per-group expand state: a collapsed group renders only its TOTAL
             // column, flattened to a single header carrying a [+] toggle; an
             // expanded group renders the full grouped two-row header with its
@@ -8719,102 +8356,17 @@
             const colLeader = document.createElement('col');
             colLeader.style.width = leaderColWidth + 'px';
             colgroup.appendChild(colLeader);
-            if (isSplitEnabled) {
-                colDefs.forEach(() => {
-                    // Total column
-                    const colTotal = document.createElement('col');
-                    colTotal.style.width = '150px';
-                    colgroup.appendChild(colTotal);
-                    // Tool columns
-                    activeTools.forEach(() => {
-                        const colTool = document.createElement('col');
-                        colTool.style.width = '150px';
-                        colgroup.appendChild(colTool);
-                    });
-                });
-            } else {
-                displayColDefs.forEach(() => {
-                    const c = document.createElement('col');
-                    c.style.width = '150px';
-                    colgroup.appendChild(c);
-                });
-            }
+            displayColDefs.forEach(() => {
+                const c = document.createElement('col');
+                c.style.width = '150px';
+                colgroup.appendChild(c);
+            });
             table.appendChild(colgroup);
 
             // Header
             const thead = document.createElement('thead');
 
-            if (isSplitEnabled) {
-                const row1 = document.createElement('tr');
-                const row2 = document.createElement('tr');
-
-                // Leader column (rowspan="2")
-                const thLeader = document.createElement('th');
-                thLeader.id = 'header-leader';
-                thLeader.rowSpan = 2;
-                const isLeaderActive = (activeSortCol === 'leader');
-                if (isLeaderActive) {
-                    thLeader.classList.add('active-sort');
-                }
-                const leaderIcon = isLeaderActive ? (activeSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-                thLeader.innerHTML = escHtml(leaderLabel) + `<span class="sort-icon">${leaderIcon}</span>`;
-                thLeader.addEventListener('click', () => handleSortClick('leader'));
-                row1.appendChild(thLeader);
-
-                // For each metric, create the category header in row1, and sub-headers in row2
-                colDefs.forEach((col, colIdx) => {
-                    const thCat = document.createElement('th');
-                    thCat.id = 'header-metric-cat-' + colIdx;
-                    thCat.colSpan = 1 + activeTools.length;
-                    thCat.style.textAlign = 'center';
-                    thCat.innerHTML = escHtml(col.headerLabel || col.displayName);
-                    if (col._description) {
-                        thCat.innerHTML += ` <span class="info-icon" title="${escHtml(col._description)}">ⓘ</span>`;
-                    }
-                    row1.appendChild(thCat);
-
-                    // Row 2: Total sub-column
-                    const thTotal = document.createElement('th');
-                    thTotal.className = 'metric-cell';
-                    thTotal.id = `header-metric-${colIdx}-total`;
-                    const sortKeyTotal = col.displayName;
-                    const isTotalActive = (activeSortCol === sortKeyTotal);
-                    if (isTotalActive) {
-                        thTotal.classList.add('active-sort');
-                    }
-                    const totalIcon = isTotalActive ? (activeSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-
-                    const isUserMetric = (col.displayName === activeUserMetricName);
-                    const isEmailMissing = !emailColName || emailColIdx === -1;
-                    if (isUserMetric && isEmailMissing) {
-                        thTotal.innerHTML = 'TOTAL <span style="cursor:help;margin-left:2px" title="Warning: Email ID column is missing. Active Users Total is pre-aggregated and may contain duplicates. Recommend using COUNTD LOD: { FIXED [Tool], [Node] : COUNTD([Email ID]) }">⚠️</span>' + `<span class="sort-icon">${totalIcon}</span>`;
-                    } else {
-                        thTotal.innerHTML = 'TOTAL' + `<span class="sort-icon">${totalIcon}</span>`;
-                    }
-
-                    thTotal.addEventListener('click', () => handleSortClick(sortKeyTotal));
-                    row2.appendChild(thTotal);
-
-                    // Row 2: Tool sub-columns
-                    activeTools.forEach((tool, tIdx) => {
-                        const thTool = document.createElement('th');
-                        thTool.className = 'metric-cell';
-                        thTool.id = `header-metric-${colIdx}-tool-${tIdx}`;
-                        const sortKeyTool = col.displayName + '__' + tool;
-                        const isToolActive = (activeSortCol === sortKeyTool);
-                        if (isToolActive) {
-                            thTool.classList.add('active-sort');
-                        }
-                        const toolIcon = isToolActive ? (activeSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-                        thTool.innerHTML = escHtml(tool) + `<span class="sort-icon">${toolIcon}</span>`;
-                        thTool.addEventListener('click', () => handleSortClick(sortKeyTool));
-                        row2.appendChild(thTool);
-                    });
-                });
-
-                thead.appendChild(row1);
-                thead.appendChild(row2);
-            } else if (groupedHeader) {
+            if (groupedHeader) {
                 // Grouped two-row header driven by colDef groupLabel/subLabel
                 // metadata (provider split, EXPANDED state: single Active Users
                 // column + Credit Usage group spanning TOTAL + per-provider
@@ -8969,7 +8521,7 @@
 
             const makeRow = (rowData, i) => buildTableRow(
                 rowData, i, displayColDefs, prevKeyMap, indent,
-                showToggle, isSplitEnabled, hasPrev,
+                showToggle, hasPrev,
                 activeUserMetricName, emailColName, showInitials
             );
 
@@ -8998,7 +8550,7 @@
             }
 
             // Dynamically calculate and set top position for Row 2 headers to handle sticky scrolling cleanly
-            if (isSplitEnabled || groupedHeader) {
+            if (groupedHeader) {
                 const firstRow = table.querySelector('thead tr:first-child');
                 const secondRow = table.querySelector('thead tr:nth-child(2)');
                 if (firstRow && secondRow) {
