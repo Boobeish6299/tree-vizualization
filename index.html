@@ -1081,11 +1081,10 @@
         .data-table {
             border-collapse: separate;
             border-spacing: 0;
-            /* Fill the full wrapper width so columns distribute evenly;
-               min-width: max-content allows horizontal scroll when
-               the column count makes the table wider than the viewport. */
-            width: 100%;
-            min-width: max-content;
+            /* width: max-content ensures columns stay at their exact defined width and
+               expand to the right, triggering overflow scroll instead of squishing columns. */
+            width: max-content;
+            min-width: 100%;
             table-layout: fixed;
         }
 
@@ -1094,8 +1093,9 @@
            (L6-L7) stay readable instead of ellipsizing into the indent. */
         .data-table td:first-child,
         .data-table th:first-child {
-            width: auto;
-            min-width: var(--leader-col-width, 160px);
+            width: var(--leader-col-width, 200px);
+            min-width: 160px;
+            max-width: var(--leader-col-width, 480px);
             overflow: visible;
         }
 
@@ -8716,18 +8716,31 @@
             // labeled header. Pinned cols keep every column uniform; the
             // table's width:100% then stretches them proportionally to fill
             // the wrapper edge-to-edge.
-            if (!isSplitEnabled) {
-                const colgroup = document.createElement('colgroup');
-                const colLeader = document.createElement('col');
-                colLeader.style.width = 'auto';
-                colgroup.appendChild(colLeader);
+            const colgroup = document.createElement('colgroup');
+            const colLeader = document.createElement('col');
+            colLeader.style.width = leaderColWidth + 'px';
+            colgroup.appendChild(colLeader);
+            if (isSplitEnabled) {
+                colDefs.forEach(() => {
+                    // Total column
+                    const colTotal = document.createElement('col');
+                    colTotal.style.width = '150px';
+                    colgroup.appendChild(colTotal);
+                    // Tool columns
+                    activeTools.forEach(() => {
+                        const colTool = document.createElement('col');
+                        colTool.style.width = '150px';
+                        colgroup.appendChild(colTool);
+                    });
+                });
+            } else {
                 displayColDefs.forEach(() => {
                     const c = document.createElement('col');
                     c.style.width = '150px';
                     colgroup.appendChild(c);
                 });
-                table.appendChild(colgroup);
             }
+            table.appendChild(colgroup);
 
             // Header
             const thead = document.createElement('thead');
