@@ -2775,6 +2775,23 @@
             return cloned;
         }
 
+        function isNodeActiveOnGca(node) {
+            for (const [key, val] of Object.entries(node.metrics)) {
+                if (key.toLowerCase().includes('google code assist') || key.toLowerCase().includes('gca')) {
+                    if (key.includes('__den')) continue;
+                    if (val > 0) return true;
+                }
+            }
+            if (node.emails) {
+                for (const [key, emailSet] of Object.entries(node.emails)) {
+                    if (key.toLowerCase().includes('google code assist') || key.toLowerCase().includes('gca')) {
+                        if (emailSet && emailSet.size > 0) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         function filterLeafNodes(nodes, threshold) {
             let anyRemaining = false;
             for (const [key, node] of Object.entries(nodes)) {
@@ -2787,11 +2804,17 @@
                         anyRemaining = true;
                     }
                 } else {
-                    const credits = getLeafCredits(node);
-                    if (credits < threshold) {
-                        delete nodes[key];
-                    } else {
+                    // Exempt GCA-active users from threshold filtering if GCA has no credits
+                    const isGcaActive = !_gcaCreditHasData && isNodeActiveOnGca(node);
+                    if (isGcaActive) {
                         anyRemaining = true;
+                    } else {
+                        const credits = getLeafCredits(node);
+                        if (credits < threshold) {
+                            delete nodes[key];
+                        } else {
+                            anyRemaining = true;
+                        }
                     }
                 }
             }
@@ -2959,6 +2982,12 @@
 
             const updatedTiles = kpiTileResults.map(tile => {
                 if (tile.type !== 'metric') return tile;
+
+                const titleLower = tile.title.toLowerCase();
+                const isGca = titleLower.includes('google code assist') || titleLower.includes('gca');
+                if (isGca && !_gcaCreditHasData) {
+                    return tile; // Skip splitting/filtering for GCA KPI tiles since GCA doesn't have credit usage
+                }
 
                 const metricName = findTreeMetricForKpi(tile.title);
                 if (!metricName) return tile;
