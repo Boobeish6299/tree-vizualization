@@ -1410,6 +1410,106 @@
             flex-shrink: 0;
         }
 
+        /* Credit Threshold Slider styling */
+        #credit-filter-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #ffffff;
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color, #dde3ed);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        #credit-filter-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--font-color, #1a1a2e);
+            letter-spacing: 0.02em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #credit-filter-badge {
+            background: var(--btn-expand-bg, #eef0ff);
+            color: var(--btn-expand-color, #667eea);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 10px;
+        }
+        .credit-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 140px;
+            height: 6px;
+            border-radius: 3px;
+            background: #e2e8f0;
+            outline: none;
+            transition: background 0.15s ease-in-out;
+        }
+        .credit-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--btn-active-bg, #667eea);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+            transition: transform 0.1s ease;
+        }
+        .credit-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .credit-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--btn-active-bg, #667eea);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+            transition: transform 0.1s ease;
+        }
+        .credit-slider::-moz-range-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* Split KPI Tile Layout */
+        .kpi-tile-split {
+            min-width: 280px !important;
+            text-align: left !important;
+        }
+        .kpi-split-row {
+            display: flex;
+            gap: 16px;
+            margin-top: 10px;
+            align-items: flex-start;
+        }
+        .kpi-split-col {
+            flex: 1;
+            min-width: 0;
+        }
+        .kpi-split-col.border-left {
+            border-left: 1px dashed var(--border-color, #dde3ed);
+            padding-left: 16px;
+        }
+        .kpi-split-label {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--neutral-color, #9b9b9b);
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+        .kpi-tile-ratio {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--neutral-color, #9b9b9b);
+            margin-top: 4px;
+        }
+
         /* Metric Cells — two-line layout */
         .metric-value {
             font-size: var(--font-size);
@@ -2547,6 +2647,14 @@
                 <button id="btn-collapse-all" class="btn-secondary" style="margin-top: 0;" onclick="collapseAll()">Collapse
                     all</button>
             </div>
+            <!-- Credit Threshold Slider -->
+            <div id="credit-filter-wrap" style="display: none; align-items: center; gap: 12px;">
+                <span id="credit-filter-label">
+                    Credit Threshold:
+                    <span id="credit-filter-badge">All</span>
+                </span>
+                <input type="range" id="credit-threshold-slider" class="credit-slider" min="0" max="1000" step="50" value="0">
+            </div>
             <div id="kpi-trend-toggle-wrap">
                 <label class="kpi-toggle-label">
                     <span class="kpi-toggle-text">Show Trend</span>
@@ -2576,6 +2684,10 @@
            STATE
            ================================================================ */
         let currentTree = {};
+        let unfilteredTree = {};     // Store raw merged tree before threshold filter
+        let unfilteredPrevTree = null; // Store raw merged previous period tree
+        let activeTaColDefs = [];    // Global copy of taColDefs for re-aggregation
+        let currentThreshold = 0;    // Active credit threshold
         // Cached parent-path set rebuilt only when currentTree changes (i.e. on
         // every fetch), not on every expand/collapse render.  Saves an O(N) tree
         // walk per toggle on large hierarchies.
@@ -2622,6 +2734,263 @@
         let firstMeasureName = null;
         let activeTools = [];
         let emailColIdx = -1;
+
+        /* ================================================================
+           CREDIT THRESHOLD SLIDER UTILITIES
+           ================================================================ */
+        
+        function getLeafCredits(node) {
+            if (node.metrics['Total Credit Usage'] !== undefined) {
+                return node.metrics['Total Credit Usage'];
+            }
+            let sum = 0;
+            let hasCredit = false;
+            for (const key of Object.keys(node.metrics)) {
+                if (key.toLowerCase().includes('credit')) {
+                    if (key.includes('__')) continue; // Skip tool splits / denominators
+                    sum += node.metrics[key];
+                    hasCredit = true;
+                }
+            }
+            return hasCredit ? sum : 0;
+        }
+
+        function cloneTree(nodes) {
+            const cloned = {};
+            for (const [key, node] of Object.entries(nodes)) {
+                cloned[key] = {
+                    name: node.name,
+                    level: node.level,
+                    depth: node.depth,
+                    children: cloneTree(node.children),
+                    metrics: { ...node.metrics },
+                    emails: {}
+                };
+                if (node.emails) {
+                    for (const [k, s] of Object.entries(node.emails)) {
+                        cloned[key].emails[k] = new Set(s);
+                    }
+                }
+            }
+            return cloned;
+        }
+
+        function filterLeafNodes(nodes, threshold) {
+            let anyRemaining = false;
+            for (const [key, node] of Object.entries(nodes)) {
+                const hasChildren = node.children && Object.keys(node.children).length > 0;
+                if (hasChildren) {
+                    const childrenRemaining = filterLeafNodes(node.children, threshold);
+                    if (!childrenRemaining) {
+                        delete nodes[key];
+                    } else {
+                        anyRemaining = true;
+                    }
+                } else {
+                    const credits = getLeafCredits(node);
+                    if (credits < threshold) {
+                        delete nodes[key];
+                    } else {
+                        anyRemaining = true;
+                    }
+                }
+            }
+            return anyRemaining;
+        }
+
+        function findMaxLeafCredits(nodes) {
+            let maxVal = 0;
+            Object.values(nodes).forEach(node => {
+                const hasChildren = node.children && Object.keys(node.children).length > 0;
+                if (hasChildren) {
+                    const childMax = findMaxLeafCredits(node.children);
+                    if (childMax > maxVal) maxVal = childMax;
+                } else {
+                    const credits = getLeafCredits(node);
+                    if (credits > maxVal) maxVal = credits;
+                }
+            });
+            return maxVal;
+        }
+
+        function getCleanMax(val) {
+            if (val <= 0) return 100;
+            if (val <= 100) return 100;
+            if (val <= 500) return 500;
+            if (val <= 1000) return 1000;
+            if (val <= 5000) return 5000;
+            if (val <= 10000) return 10000;
+            return Math.ceil(val / 5000) * 5000;
+        }
+
+        function calibrateSlider(maxCredits) {
+            const slider = document.getElementById('credit-threshold-slider');
+            const badge = document.getElementById('credit-filter-badge');
+            const filterWrap = document.getElementById('credit-filter-wrap');
+            if (!slider) return;
+
+            const hasCredits = maxCredits > 0;
+            if (filterWrap) {
+                filterWrap.style.display = hasCredits ? 'flex' : 'none';
+            }
+            if (!hasCredits) return;
+
+            const cleanMax = getCleanMax(maxCredits);
+            slider.max = cleanMax;
+            
+            // Dynamic steps
+            if (cleanMax <= 100) slider.step = 5;
+            else if (cleanMax <= 500) slider.step = 25;
+            else if (cleanMax <= 1000) slider.step = 50;
+            else if (cleanMax <= 5000) slider.step = 250;
+            else slider.step = 500;
+
+            if (currentThreshold > cleanMax) {
+                currentThreshold = 0;
+                slider.value = 0;
+            } else {
+                slider.value = currentThreshold;
+            }
+
+            if (badge) {
+                badge.textContent = currentThreshold === 0 ? 'All' : `≥ ${currentThreshold}`;
+            }
+        }
+
+        function applyThresholdAndRender() {
+            if (!unfilteredTree || Object.keys(unfilteredTree).length === 0) return;
+
+            // 1. Reset caches that depend on tree shape or sorting
+            _cachedParentPaths = null; 
+
+            // 2. Clone and filter currentTree
+            currentTree = cloneTree(unfilteredTree);
+            if (currentThreshold > 0) {
+                filterLeafNodes(currentTree, currentThreshold);
+            }
+
+            // 3. Re-aggregate currentTree
+            aggregateTree(currentTree, activeTaColDefs, '');
+            evaluateCalculatedMetrics(currentTree, activeTaColDefs);
+            pruneRedundantSelfNodes(currentTree);
+
+            // 4. Clone and filter prevTree (if configured)
+            if (unfilteredPrevTree && Object.keys(unfilteredPrevTree).length > 0) {
+                const prevTree = cloneTree(unfilteredPrevTree);
+                if (currentThreshold > 0) {
+                    filterLeafNodes(prevTree, currentThreshold);
+                }
+                aggregateTree(prevTree, activeTaColDefs, '');
+                evaluateCalculatedMetrics(prevTree, activeTaColDefs);
+                
+                prevKeyMap = {};
+                flattenTreeToKeyMap(prevTree, prevKeyMap, '', activeTaColDefs);
+            }
+
+            // 5. Render
+            renderTable();
+            updateAndRenderKpiTiles();
+        }
+
+        function findTreeMetricForKpi(tileTitle) {
+            const titleLower = tileTitle.toLowerCase();
+            let isCredit = titleLower.includes('credit');
+            let isUser = titleLower.includes('user') || titleLower.includes('active');
+
+            let tool = null;
+            if (titleLower.includes('windsurf')) {
+                tool = 'Windsurf';
+            } else if (titleLower.includes('google code assist') || titleLower.includes('gca')) {
+                tool = 'Google Code Assist';
+            }
+
+            let matchedCol = null;
+            for (const col of colDefs) {
+                const colNameLower = col.displayName.toLowerCase();
+                if (isCredit && colNameLower.includes('credit')) {
+                    if (tool && colNameLower.includes(tool.toLowerCase())) {
+                        matchedCol = col;
+                        break;
+                    } else if (!tool && colNameLower.includes('total')) {
+                        matchedCol = col;
+                        break;
+                    }
+                } else if (isUser && (colNameLower.includes('user') || colNameLower.includes('active'))) {
+                    if (tool && colNameLower.includes(tool.toLowerCase())) {
+                        matchedCol = col;
+                        break;
+                    } else if (!tool && colNameLower.includes('total')) {
+                        matchedCol = col;
+                        break;
+                    }
+                }
+            }
+            return matchedCol ? matchedCol.displayName : null;
+        }
+
+        function computeFilteredMetricValue(metricName) {
+            const rootNodes = Object.values(currentTree);
+            if (!rootNodes.length) return 0;
+
+            const firstNode = rootNodes[0];
+            const isEmailDistinct = firstNode.emails && firstNode.emails[metricName] !== undefined;
+
+            if (isEmailDistinct) {
+                const unionSet = new Set();
+                rootNodes.forEach(node => {
+                    if (node.emails && node.emails[metricName]) {
+                        node.emails[metricName].forEach(email => unionSet.add(email));
+                    }
+                });
+                return unionSet.size;
+            } else {
+                let sum = 0;
+                rootNodes.forEach(node => {
+                    if (node.metrics && node.metrics[metricName] !== undefined) {
+                        sum += node.metrics[metricName];
+                    }
+                });
+                return sum;
+            }
+        }
+
+        function updateAndRenderKpiTiles() {
+            if (!kpiTileResults || kpiTileResults.length === 0) return;
+
+            const updatedTiles = kpiTileResults.map(tile => {
+                if (tile.type !== 'metric') return tile;
+
+                const metricName = findTreeMetricForKpi(tile.title);
+                if (!metricName) return tile;
+
+                const filteredVal = computeFilteredMetricValue(metricName);
+                return {
+                    ...tile,
+                    filteredValue: filteredVal
+                };
+            });
+
+            renderKpiTiles(filterKpiResultsByTool(updatedTiles));
+        }
+
+        function initCreditSliderListener() {
+            const slider = document.getElementById('credit-threshold-slider');
+            const badge = document.getElementById('credit-filter-badge');
+            if (!slider) return;
+
+            // Remove existing listener if any, and attach a new one
+            slider.replaceWith(slider.cloneNode(true));
+            const newSlider = document.getElementById('credit-threshold-slider');
+
+            newSlider.addEventListener('input', function() {
+                const val = parseInt(this.value, 10);
+                currentThreshold = val;
+                if (badge) {
+                    badge.textContent = val === 0 ? 'All' : `≥ ${val}`;
+                }
+                applyThresholdAndRender();
+            });
+        }
 
         function parseKpiValue(s) {
             if (s === undefined || s === null) return null;
@@ -3333,17 +3702,47 @@
                     infoHtml = ` <span class="info-icon" title="${esc(r.description)}">ⓘ</span>`;
                 }
 
-                return `<div class="kpi-tile" style="
-                    --kpi-accent: ${r.accentColor};
-                    --kpi-title-color: ${r.titleColor};
-                    --kpi-title-size: ${r.titleFontSize}px;
-                    --kpi-value-size: ${r.valueFontSize}px;
-                    border-left-style: ${r.borderStyle};
-                ">
-                    <div class="kpi-tile-title">${esc(r.title)}${infoHtml}</div>
-                    <div class="kpi-tile-value" style="color: ${r.valueColor}">${esc(formattedValue)}</div>
-                    ${deltaHtml}
-                </div>`;
+                const isSplit = currentThreshold > 0 && r.filteredValue !== undefined;
+
+                if (isSplit) {
+                    const pct = (r.value > 0) ? (r.filteredValue / r.value) * 100 : 0;
+                    const pctText = `${pct.toFixed(1)}% of total`;
+                    const formattedFilteredValue = formatKpiValue(r.filteredValue, r.format, r.filteredValue);
+                    
+                    return `<div class="kpi-tile kpi-tile-split" style="
+                        --kpi-accent: ${r.accentColor};
+                        --kpi-title-color: ${r.titleColor};
+                        --kpi-title-size: ${r.titleFontSize}px;
+                        --kpi-value-size: ${r.valueFontSize}px;
+                        border-left-style: ${r.borderStyle};
+                    ">
+                        <div class="kpi-tile-title">${esc(r.title)}${infoHtml}</div>
+                        <div class="kpi-split-row">
+                            <div class="kpi-split-col">
+                                <div class="kpi-split-label">TOTAL</div>
+                                <div class="kpi-tile-value" style="color: var(--neutral-color, #9b9b9b); font-size: calc(var(--kpi-value-size) * 0.75);">${esc(formattedValue)}</div>
+                                ${deltaHtml}
+                            </div>
+                            <div class="kpi-split-col border-left">
+                                <div class="kpi-split-label">FILTERED (≥${currentThreshold})</div>
+                                <div class="kpi-tile-value" style="color: ${r.valueColor}; font-size: calc(var(--kpi-value-size) * 0.75);">${esc(formattedFilteredValue)}</div>
+                                <div class="kpi-tile-ratio">${pctText}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                } else {
+                    return `<div class="kpi-tile" style="
+                        --kpi-accent: ${r.accentColor};
+                        --kpi-title-color: ${r.titleColor};
+                        --kpi-title-size: ${r.titleFontSize}px;
+                        --kpi-value-size: ${r.valueFontSize}px;
+                        border-left-style: ${r.borderStyle};
+                    ">
+                        <div class="kpi-tile-title">${esc(r.title)}${infoHtml}</div>
+                        <div class="kpi-tile-value" style="color: ${r.valueColor}">${esc(formattedValue)}</div>
+                        ${deltaHtml}
+                    </div>`;
+                }
             }).join('');
 
             // Apply the KPI delta colors from settings
@@ -5977,8 +6376,17 @@
                         // behavior is lost. Configure-save clears the cache, so a cached
                         // build is always valid under current settings.
                         if (ENABLE_BUILT_TREE_CACHE && cachedEntry.built && !forceCollapseOnNextFetch) {
-                            ({ currentTree, prevKeyMap, colDefs } = cachedEntry.built);
-                            // Reconcile expansion state exactly like the build tail (4818+):
+                            ({ unfilteredTree, unfilteredPrevTree, colDefs } = cachedEntry.built);
+                            activeTaColDefs = cachedEntry.built.activeTaColDefs || colDefs;
+
+                            // Calibrate slider and apply threshold filter
+                            const maxCredits = findMaxLeafCredits(unfilteredTree);
+                            calibrateSlider(maxCredits);
+                            initCreditSliderListener();
+
+                            applyThresholdAndRender();
+
+                            // Reconcile expansion state exactly like the build tail:
                             // prune stale expanded paths, then restore defaults on refresh.
                             const validPathsArr = [];
                             collectAllParentPaths(currentTree, '', validPathsArr);
@@ -5990,15 +6398,13 @@
                                 autoExpandToTeamPicks();
                             }
                             hasLoadedOnce = true;
-                            _cachedParentPaths = null; // invalidate on new data
                             if (overlayEl) overlayEl.classList.remove('visible');
                             if (!isRefresh) { loadingEl.style.display = 'none'; toolbarEl.style.display = 'flex'; }
-                            console.log('[HierExt] built-tree cache-hit: skipping rebuild for sig:', lastDataSignature);
+                            console.log('[HierExt] built-tree cache-hit: loaded raw tree & applied threshold for sig:', lastDataSignature);
                             // Auto-expand credit groups when model filter is active
                             if (_selectedModelsParamValue && _selectedModelsParamValue !== 'all') {
                                 colDefs.forEach(c => { if (c.groupTool) expandedCreditTools.add(c.groupTool); });
                             }
-                            renderTable();
                             return;
                         }
                         ({ splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable } = cachedEntry.tables);
@@ -6915,10 +7321,9 @@
                             } catch (e) { console.warn('[HierExt][TotalDiag] failed', e); }
                             // ── end TEMP DIAGNOSTIC ──
 
-                            // Aggregate and evaluate current-period tree
-                            aggregateTree(currentTree, taColDefs, '');
-                            evaluateCalculatedMetrics(currentTree, taColDefs);
-                            pruneRedundantSelfNodes(currentTree);
+                            // Save unfiltered state and column definitions
+                            activeTaColDefs = taColDefs;
+                            unfilteredTree = cloneTree(currentTree);
 
                             // ── Build the previous-period tree from the prev Split / Total sheets ──
                             // Mirrors the current-period merge above so the resulting prevKeyMap
@@ -6932,6 +7337,7 @@
                             // equivalent by trying a fixed set of naming conventions, so the user
                             // does not have to configure these mappings manually.
                             prevKeyMap = {};
+                            unfilteredPrevTree = null;
                             if (splitPrevDataTable || totalPrevDataTable) {
 
                                 // Self-mode: prev source is the SAME fetched table as the
@@ -7220,10 +7626,7 @@
                                         });
                                     }
 
-                                    aggregateTree(prevTree, taColDefs, '');
-                                    evaluateCalculatedMetrics(prevTree, taColDefs);
-                                    pruneRedundantSelfNodes(prevTree);
-                                    flattenTreeToKeyMap(prevTree, prevKeyMap, '', taColDefs);
+                                    unfilteredPrevTree = cloneTree(prevTree);
                                 } // end if (anyPrevResolved)
                             }
 
@@ -7266,18 +7669,22 @@
                     // fully capture the render-relevant state.
                     if (lastDataSignature) {
                         const _builtEntry = rawDataCache.get(lastDataSignature);
-                        if (_builtEntry) _builtEntry.built = { currentTree, prevKeyMap, colDefs };
+                        if (_builtEntry) _builtEntry.built = { unfilteredTree, unfilteredPrevTree, colDefs, activeTaColDefs };
                     }
 
-                    // --- Render ---
+                    // --- Render & Threshold Calibration ---
                     tBuildDone = performance.now();
-                    renderTable();
+                    const maxCredits = findMaxLeafCredits(unfilteredTree);
+                    calibrateSlider(maxCredits);
+                    initCreditSliderListener();
+
+                    applyThresholdAndRender();
                     tRenderDone = performance.now();
 
                     // Fetch and render KPI tiles (non-blocking — tree renders first)
                     fetchKpiTileData().then(kpiResults => {
                         kpiTileResults = kpiResults;
-                        renderKpiTiles(filterKpiResultsByTool(kpiResults));
+                        updateAndRenderKpiTiles();
                         renderFilterContextBar();
                     }).catch(e => console.warn('[KPI] tile fetch error:', e));
 
@@ -8519,7 +8926,19 @@
                 setupVirtualBody(table, tbody, visibleRows, makeRow);
             } else {
                 const fragment = document.createDocumentFragment();
-                visibleRows.forEach((rowData, i) => fragment.appendChild(makeRow(rowData, i)));
+                if (visibleRows.length === 0) {
+                    const tr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = 1 + displayColDefs.length;
+                    td.style.textAlign = 'center';
+                    td.style.padding = '40px 20px';
+                    td.style.color = 'var(--neutral-color, #9b9b9b)';
+                    td.innerHTML = '<div style="font-size: 16px; margin-bottom: 5px;">📭 No users match the threshold</div><div style="font-size: 12px; opacity: 0.85;">Try lowering the credit threshold slider.</div>';
+                    tr.appendChild(td);
+                    fragment.appendChild(tr);
+                } else {
+                    visibleRows.forEach((rowData, i) => fragment.appendChild(makeRow(rowData, i)));
+                }
                 tbody.appendChild(fragment);
                 container.appendChild(table);
             }
