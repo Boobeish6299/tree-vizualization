@@ -2484,6 +2484,14 @@
                             <label for="cfg-virtual-scroll">Virtualize large tables (render only on-screen rows — faster
                                 on big trees)</label>
                         </div>
+                        <div class="cfg-checkbox-row">
+                            <input type="checkbox" id="cfg-enable-threshold-slider" checked>
+                            <label for="cfg-enable-threshold-slider">Enable Credit Threshold Slider</label>
+                        </div>
+                        <div class="cfg-checkbox-row">
+                            <input type="checkbox" id="cfg-enable-trend-toggle" checked>
+                            <label for="cfg-enable-trend-toggle">Enable Show Trend toggle in toolbar</label>
+                        </div>
                     </div>
 
                     <!-- Expand / Collapse Button Styling -->
@@ -2814,11 +2822,17 @@
             const filterWrap = document.getElementById('credit-filter-wrap');
             if (!slider) return;
 
-            const hasCredits = maxCredits > 0;
+            const isSliderEnabled = getSetting('thresholdSliderEnabled', 'true') !== 'false';
+            const hasCredits = maxCredits > 0 && isSliderEnabled;
             if (filterWrap) {
                 filterWrap.style.display = hasCredits ? 'flex' : 'none';
             }
-            if (!hasCredits) return;
+            if (!hasCredits) {
+                currentThreshold = 0;
+                slider.value = 0;
+                if (badge) badge.textContent = 'All';
+                return;
+            }
 
             const cleanMax = getCleanMax(maxCredits);
             slider.max = cleanMax;
@@ -3742,19 +3756,31 @@
 
         function initTrendToggle() {
             const toggle = document.getElementById('kpi-trend-toggle');
+            const wrap = document.getElementById('kpi-trend-toggle-wrap');
             if (!toggle) return;
+
+            const isTrendSettingEnabled = getSetting('trendToggleEnabled', 'true') !== 'false';
+            if (wrap) {
+                wrap.style.display = isTrendSettingEnabled ? 'flex' : 'none';
+            }
+
+            if (!isTrendSettingEnabled) {
+                applyTrendVisibility(false);
+                return;
+            }
+
             const isOn = getSetting('kpiShowTrend', 'false') === 'true';
             toggle.checked = isOn;
             applyTrendVisibility(isOn);
 
-            toggle.addEventListener('change', () => {
+            toggle.onchange = () => {
                 const checked = toggle.checked;
                 applyTrendVisibility(checked);
                 // Persist to settings
                 tableau.extensions.settings.set('kpiShowTrend', checked ? 'true' : 'false');
                 tableau.extensions.settings.saveAsync().catch(e =>
                     console.warn('[KPI] failed to persist trend toggle:', e));
-            });
+            };
         }
 
         function applyTrendVisibility(show) {
@@ -4490,6 +4516,8 @@
             document.getElementById('cfg-show-toggle').checked = showToggle !== 'false';
             document.getElementById('cfg-show-initials').checked = getSetting('showInitials', 'true') !== 'false';
             document.getElementById('cfg-virtual-scroll').checked = getSetting('virtualScroll', 'false') === 'true';
+            document.getElementById('cfg-enable-threshold-slider').checked = getSetting('thresholdSliderEnabled', 'true') !== 'false';
+            document.getElementById('cfg-enable-trend-toggle').checked = getSetting('trendToggleEnabled', 'true') !== 'false';
 
             // Expand/Collapse Button styling
             setConfigColorValue('cfg-toolbar-bg', 'cfg-toolbar-bg-hex', 'toolbarBg', '#ffffff');
@@ -5581,6 +5609,8 @@
             s.set('showToggleIcon', document.getElementById('cfg-show-toggle').checked ? 'true' : 'false');
             s.set('showInitials', document.getElementById('cfg-show-initials').checked ? 'true' : 'false');
             s.set('virtualScroll', document.getElementById('cfg-virtual-scroll').checked ? 'true' : 'false');
+            s.set('thresholdSliderEnabled', document.getElementById('cfg-enable-threshold-slider').checked ? 'true' : 'false');
+            s.set('trendToggleEnabled', document.getElementById('cfg-enable-trend-toggle').checked ? 'true' : 'false');
 
             // Expand/Collapse Button styling
             s.set('toolbarBg', document.getElementById('cfg-toolbar-bg').value);
@@ -8148,7 +8178,7 @@
         // Windowed body renderer. makeRow(rowData, i) builds the <tr> for logical
         // row i; `rows` is the full flattened visibleRows array. `table` and `tbody`
         // are freshly created this render and `table` is already in the DOM.
-        function setupVirtualBody(table, tbody, rows, makeRow) {
+        function setupVirtualBody(table, tbody, rows, makeRow, leaderColWidth) {
             const wrapper = document.getElementById('table-wrapper');
             const N = rows.length;
             const BUFFER = 12; // extra rows rendered above/below the viewport
@@ -8165,12 +8195,12 @@
             // 2. Explicit <colgroup> so table-layout:fixed derives column widths from
             //    the colgroup, NOT from the first tbody row (which may be a spacer
             //    colspan cell that carries no per-column width). Matches .data-table
-            //    CSS widths (first col 200px, metric cols 150px).
+            //    CSS widths.
             if (!table.querySelector('colgroup')) {
                 const colgroup = document.createElement('colgroup');
                 for (let i = 0; i < colCount; i++) {
                     const col = document.createElement('col');
-                    col.style.width = i === 0 ? 'auto' : '150px';
+                    col.style.width = i === 0 ? leaderColWidth + 'px' : '150px';
                     colgroup.appendChild(col);
                 }
                 table.insertBefore(colgroup, table.firstChild);
@@ -8529,7 +8559,7 @@
             if (virtualEnabled && visibleRows.length > VIRT_ROW_THRESHOLD) {
                 // Table must be in the DOM before measuring row height / viewport.
                 container.appendChild(table);
-                setupVirtualBody(table, tbody, visibleRows, makeRow);
+                setupVirtualBody(table, tbody, visibleRows, makeRow, leaderColWidth);
             } else {
                 const fragment = document.createDocumentFragment();
                 if (visibleRows.length === 0) {
