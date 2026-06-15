@@ -8203,7 +8203,7 @@
                 const colgroup = document.createElement('colgroup');
                 for (let i = 0; i < colCount; i++) {
                     const col = document.createElement('col');
-                    col.style.width = i === 0 ? leaderColWidth + 'px' : '150px';
+                    col.style.width = i === 0 ? 'auto' : '150px';
                     colgroup.appendChild(col);
                 }
                 table.insertBefore(colgroup, table.firstChild);
@@ -8387,7 +8387,7 @@
             // the wrapper edge-to-edge.
             const colgroup = document.createElement('colgroup');
             const colLeader = document.createElement('col');
-            colLeader.style.width = leaderColWidth + 'px';
+            colLeader.style.width = 'auto';
             colgroup.appendChild(colLeader);
             displayColDefs.forEach(() => {
                 const c = document.createElement('col');
