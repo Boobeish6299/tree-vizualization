@@ -1101,9 +1101,9 @@
         /* Metric columns: equal share of remaining space, consistent minimum */
         .data-table td:not(:first-child),
         .data-table th:not(:first-child) {
-            width: 150px;
-            min-width: 140px;
-            max-width: 180px;
+            width: auto;
+            min-width: 150px;
+            max-width: none;
         }
 
         .metric-cell,
@@ -1157,8 +1157,8 @@
             left: auto;
             z-index: 20;
             text-align: left;
-            width: 150px;
-            min-width: 140px;
+            width: auto;
+            min-width: 150px;
             max-width: none;
         }
 
@@ -8203,7 +8203,7 @@
                 const colgroup = document.createElement('colgroup');
                 for (let i = 0; i < colCount; i++) {
                     const col = document.createElement('col');
-                    col.style.width = i === 0 ? 'auto' : '150px';
+                    col.style.width = i === 0 ? leaderColWidth + 'px' : 'auto';
                     colgroup.appendChild(col);
                 }
                 table.insertBefore(colgroup, table.firstChild);
@@ -8387,11 +8387,11 @@
             // the wrapper edge-to-edge.
             const colgroup = document.createElement('colgroup');
             const colLeader = document.createElement('col');
-            colLeader.style.width = 'auto';
+            colLeader.style.width = leaderColWidth + 'px';
             colgroup.appendChild(colLeader);
             displayColDefs.forEach(() => {
                 const c = document.createElement('col');
-                c.style.width = '150px';
+                c.style.width = 'auto';
                 colgroup.appendChild(c);
             });
             table.appendChild(colgroup);
