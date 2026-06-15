@@ -4560,6 +4560,7 @@
             const prefixSelect = document.getElementById('cfg-prefix-filter');
             prefixSelect.innerHTML = '<option value="">— No Prefix —</option>';
             const savedPrefix = getSetting('prefixFilter', '');
+            const savedCurrent = getSetting('splitMetricsSheet', '');
             const selectedSheetName = savedCurrent;
             if (selectedSheetName) {
                 const ws = dashboard.worksheets.find(w => w.name === selectedSheetName);
