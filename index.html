@@ -1109,7 +1109,7 @@
         .metric-cell,
         .metric-value,
         .metric-delta {
-            text-align: right !important;
+            text-align: left !important;
         }
 
         /* Header */
@@ -1124,7 +1124,7 @@
             letter-spacing: var(--header-letter-spacing);
             text-transform: uppercase;
             padding: var(--cell-padding-v) var(--cell-padding-h);
-            text-align: right;
+            text-align: left;
             /* Wrap long labels onto a second line instead of overflowing the
                fixed-width column. nowrap made wide labels (and the [+]
                toggle) spill past the cell — visually cut off by the next
@@ -1156,7 +1156,7 @@
         .data-table thead tr:nth-child(2) th:first-child {
             left: auto;
             z-index: 20;
-            text-align: right;
+            text-align: left;
             width: 150px;
             min-width: 140px;
             max-width: none;
@@ -1248,7 +1248,7 @@
 
         .data-table tbody td {
             padding: var(--cell-padding-v) var(--cell-padding-h);
-            text-align: right;
+            text-align: left;
             vertical-align: middle;
             border-bottom: 1px solid var(--border-color);
             font-variant-numeric: tabular-nums;
@@ -8076,6 +8076,7 @@
 
             // Leader cell
             const tdLeader = document.createElement('td');
+            tdLeader.style.textAlign = 'left';
             const leaderContent = document.createElement('div');
             leaderContent.className = 'leader-cell';
             leaderContent.style.paddingLeft = (rowData.depth * indent) + 'px';
@@ -8137,6 +8138,7 @@
             colDefs.forEach((col, colIdx) => {
                 const td = document.createElement('td');
                 td.className = 'metric-cell';
+                td.style.textAlign = 'left';
                 const rawVal = rowData.node.metrics[col.displayName];
                 const currentVal = resolveCellVal(rawVal, col.type);
                 td.innerHTML = buildMetricCellHTML(rowData.node, col, currentVal, prevMetrics, hasPrev, col.displayName);
@@ -8410,6 +8412,7 @@
 
                 const thLeader = document.createElement('th');
                 thLeader.id = 'header-leader';
+                thLeader.style.textAlign = 'left';
                 thLeader.rowSpan = 2;
                 const isLeaderActive = (activeSortCol === 'leader');
                 if (isLeaderActive) thLeader.classList.add('active-sort');
@@ -8422,6 +8425,7 @@
                 const makeSortableTh = (col, label, idSuffix) => {
                     const th = document.createElement('th');
                     th.className = 'metric-cell';
+                    th.style.textAlign = 'left';
                     th.id = 'header-metric-' + idSuffix;
                     const isColActive = (activeSortCol === col.displayName);
                     if (isColActive) th.classList.add('active-sort');
@@ -8496,6 +8500,7 @@
 
                 const thLeader = document.createElement('th');
                 thLeader.id = 'header-leader';
+                thLeader.style.textAlign = 'left';
                 const isLeaderActive = (activeSortCol === 'leader');
                 if (isLeaderActive) {
                     thLeader.classList.add('active-sort');
@@ -8508,6 +8513,7 @@
                 displayColDefs.forEach((col, i) => {
                     const th = document.createElement('th');
                     th.className = 'metric-cell';
+                    th.style.textAlign = 'left';
                     th.id = 'header-metric-' + i;
                     const isColActive = (activeSortCol === col.displayName);
                     if (isColActive) {
