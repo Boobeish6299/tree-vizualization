@@ -2038,6 +2038,86 @@
             padding: 1px;
             flex-shrink: 0;
         }
+
+        /* ================================================================
+           CHATBOT FAB (Floating Action Button)
+           ================================================================ */
+        @keyframes chatFabPulse {
+            0% { box-shadow: 0 4px 16px rgba(18, 140, 126, 0.4); }
+            50% { box-shadow: 0 4px 24px rgba(37, 211, 102, 0.6), 0 0 0 8px rgba(37, 211, 102, 0.1); }
+            100% { box-shadow: 0 4px 16px rgba(18, 140, 126, 0.4); }
+        }
+
+        #chat-fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(18, 140, 126, 0.4);
+            z-index: 99998;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            animation: chatFabPulse 2.5s ease-in-out infinite;
+            padding: 0;
+        }
+
+        #chat-fab:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 24px rgba(18, 140, 126, 0.55);
+            animation: none;
+        }
+
+        #chat-fab:active {
+            transform: scale(0.95);
+        }
+
+        #chat-fab svg {
+            width: 28px;
+            height: 28px;
+            fill: #ffffff;
+        }
+
+        /* Chatbot config section in wizard */
+        .chatbot-config-panel {
+            background: var(--wizard-card-bg, #ffffff);
+            border: 1px solid var(--wizard-border, #e2e8f0);
+            border-radius: var(--wizard-radius, 10px);
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 3px solid #25D366;
+        }
+
+        .chatbot-config-panel .actions-panel-title {
+            color: #128C7E;
+        }
+
+        .chatbot-schema-textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px 12px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #f7fafc;
+            color: #2d3748;
+            outline: none;
+            resize: vertical;
+            line-height: 1.6;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .chatbot-schema-textarea:focus {
+            border-color: #25D366;
+            box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.12);
+        }
     </style>
 </head>
 
@@ -2588,6 +2668,84 @@
 
             <!-- section-actions placeholder (JS may call toggleSection on this) -->
             <div id="section-actions" style="display:none"></div>
+
+            <!-- ── Chatbot Configuration ────────────────────────────────── -->
+            <div class="chatbot-config-panel">
+                <div class="actions-panel-title">🤖 Chatbot Configuration</div>
+                <p class="cfg-hint">Add an AI chatbot that sends messages to a REST API. Opens as a popup dialog outside the extension container.</p>
+
+                <div class="cfg-checkbox-row" style="margin-top:0">
+                    <input type="checkbox" id="cfg-chatbot-enabled">
+                    <label for="cfg-chatbot-enabled">Enable Chatbot</label>
+                </div>
+
+                <div id="chatbot-config-fields" style="margin-top:14px">
+                    <!-- API Settings -->
+                    <div class="step-divider" style="margin-top:0">🔗 API Settings</div>
+                    <div class="cfg-row">
+                        <div>
+                            <label class="cfg-label">REST API URL</label>
+                            <input type="text" id="cfg-chatbot-api-url" class="cfg-input" placeholder="https://api.example.com/chat">
+                        </div>
+                        <div>
+                            <label class="cfg-label">HTTP Method</label>
+                            <select id="cfg-chatbot-api-method" class="cfg-select">
+                                <option value="POST" selected>POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="GET">GET</option>
+                            </select>
+                        </div>
+                    </div>
+                    <label class="cfg-label">Custom Headers (JSON)</label>
+                    <p class="cfg-hint">Optional. e.g. {"Authorization": "Bearer token123"}</p>
+                    <input type="text" id="cfg-chatbot-headers" class="cfg-input" placeholder='{"Authorization": "Bearer ..."}'>
+
+                    <!-- Request Schema -->
+                    <div class="step-divider">📝 Request Schema</div>
+                    <p class="cfg-hint">JSON template for the request body. Use <code>{{MESSAGE}}</code>, <code>{{USERNAME}}</code>, <code>{{EMAIL}}</code> as placeholders.</p>
+                    <textarea id="cfg-chatbot-request-schema" class="chatbot-schema-textarea">{
+  "message": "{{MESSAGE}}",
+  "username": "{{USERNAME}}",
+  "email": "{{EMAIL}}"
+}</textarea>
+
+                    <!-- Response Schema -->
+                    <div class="step-divider">📥 Response Schema</div>
+                    <label class="cfg-label">Response Field Path</label>
+                    <p class="cfg-hint">Dot-path to the reply text in the API response JSON. e.g. <code>reply</code>, <code>data.message</code>, <code>choices[0].text</code></p>
+                    <input type="text" id="cfg-chatbot-response-field" class="cfg-input" value="reply" placeholder="reply">
+
+                    <!-- User Info Worksheet -->
+                    <div class="step-divider">👤 User Info Worksheet</div>
+                    <p class="cfg-hint">Select a worksheet that contains username and email fields.</p>
+                    <div class="cfg-row">
+                        <div>
+                            <label class="cfg-label">Worksheet</label>
+                            <select id="cfg-chatbot-user-ws" class="cfg-select">
+                                <option value="">— Select Worksheet —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="cfg-label">Bot Display Name</label>
+                            <input type="text" id="cfg-chatbot-bot-name" class="cfg-input" value="AI Assistant" placeholder="AI Assistant">
+                        </div>
+                    </div>
+                    <div class="cfg-row" style="margin-top:10px">
+                        <div>
+                            <label class="cfg-label">Username Column</label>
+                            <select id="cfg-chatbot-username-col" class="cfg-select">
+                                <option value="">— Select Column —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="cfg-label">Email Column</label>
+                            <select id="cfg-chatbot-email-col" class="cfg-select">
+                                <option value="">— Select Column —</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ══ FIXED SAVE BAR ════════════════════════════════════════════ -->
@@ -2649,6 +2807,17 @@
             <div id="tree-container"></div>
         </div>
     </div>
+
+    <!-- ================================================================
+         CHATBOT FAB (Floating Action Button)
+         ================================================================ -->
+    <button id="chat-fab" title="Chat with AI Assistant" onclick="openChatDialog()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+            <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2.546 20.2A1.5 1.5 0 003.8 21.454l3.032-.892A9.96 9.96 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a7.96 7.96 0 01-4.468-1.362l-.32-.214-1.8.53.53-1.8-.213-.32A7.96 7.96 0 014 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z"/>
+        </svg>
+    </button>
+
 
     <!-- ================================================================
          JAVASCRIPT
@@ -4034,6 +4203,7 @@
             }
             applyStyles();
             initTrendToggle();
+            initChatbot();
             setupEventListenersAndFetch();
         }).catch(err => {
             const loadingEl = document.getElementById('loading');
@@ -4670,6 +4840,28 @@
             ['cfg-kpi-positive-color', 'cfg-kpi-negative-color', 'cfg-kpi-neutral-color'].forEach(id => {
                 setupColorSync(id, id + '-hex');
             });
+
+            // ── Chatbot Config ──
+            document.getElementById('cfg-chatbot-enabled').checked = getSetting('chatbotEnabled', 'false') === 'true';
+            setConfigValue('cfg-chatbot-api-url', 'chatbotApiUrl', '');
+            setConfigValue('cfg-chatbot-api-method', 'chatbotApiMethod', 'POST');
+            setConfigValue('cfg-chatbot-headers', 'chatbotHeaders', '');
+            const savedSchema = getSetting('chatbotRequestSchema', '{\n  "message": "{{MESSAGE}}",\n  "username": "{{USERNAME}}",\n  "email": "{{EMAIL}}"\n}');
+            const schemaEl = document.getElementById('cfg-chatbot-request-schema');
+            if (schemaEl) schemaEl.value = savedSchema;
+            setConfigValue('cfg-chatbot-response-field', 'chatbotResponseField', 'reply');
+            setConfigValue('cfg-chatbot-bot-name', 'chatbotBotName', 'AI Assistant');
+
+            // Populate chatbot worksheet dropdown
+            const chatWsSelect = document.getElementById('cfg-chatbot-user-ws');
+            populateWsSelect(chatWsSelect, '— Select Worksheet —', getSetting('chatbotUserWorksheet', ''));
+
+            // When chatbot worksheet changes, load its columns into the column dropdowns
+            if (chatWsSelect) {
+                chatWsSelect.addEventListener('change', () => loadChatbotColumns());
+            }
+            // Load columns on initial open if worksheet is already set
+            loadChatbotColumns();
         }
 
         function setConfigValue(elId, settingKey, fallback) {
@@ -4683,6 +4875,109 @@
             const hexEl = document.getElementById(hexId);
             if (colorEl) colorEl.value = val;
             if (hexEl) hexEl.value = val;
+        }
+
+        /* ================================================================
+           CHATBOT — Load columns from user-info worksheet into dropdowns
+           ================================================================ */
+        async function loadChatbotColumns() {
+            const chatWsSelect = document.getElementById('cfg-chatbot-user-ws');
+            const usernameSelect = document.getElementById('cfg-chatbot-username-col');
+            const emailSelect = document.getElementById('cfg-chatbot-email-col');
+            if (!chatWsSelect || !usernameSelect || !emailSelect) return;
+
+            const wsName = chatWsSelect.value;
+            usernameSelect.innerHTML = '<option value="">— Select Column —</option>';
+            emailSelect.innerHTML = '<option value="">— Select Column —</option>';
+            if (!wsName) return;
+
+            try {
+                const dashboard = tableau.extensions.dashboardContent.dashboard;
+                const ws = dashboard.worksheets.find(w => w.name === wsName);
+                if (!ws) return;
+
+                const dt = await ws.getSummaryDataAsync({ ignoreSelection: true, maxRows: 1 });
+                const savedUsername = getSetting('chatbotUsernameCol', '');
+                const savedEmail = getSetting('chatbotEmailCol', '');
+
+                dt.columns.forEach(col => {
+                    const name = col.fieldName;
+                    const esc = escHtml(name);
+                    usernameSelect.innerHTML += `<option value="${esc}"${name === savedUsername ? ' selected' : ''}>${esc}</option>`;
+                    emailSelect.innerHTML += `<option value="${esc}"${name === savedEmail ? ' selected' : ''}>${esc}</option>`;
+                });
+            } catch (e) {
+                console.warn('[HierExt] Chatbot: could not load columns from worksheet:', e);
+            }
+        }
+
+        /* ================================================================
+           CHATBOT — Open dialog & Init
+           ================================================================ */
+        async function openChatDialog() {
+            const fab = document.getElementById('chat-fab');
+            if (fab) fab.style.pointerEvents = 'none'; // Prevent double-click
+
+            try {
+                // 1. Read user info from configured worksheet
+                const wsName = getSetting('chatbotUserWorksheet', '');
+                let username = '', email = '';
+                if (wsName) {
+                    const dashboard = tableau.extensions.dashboardContent.dashboard;
+                    const ws = dashboard.worksheets.find(w => w.name === wsName);
+                    if (ws) {
+                        try {
+                            const dt = await ws.getSummaryDataAsync({ ignoreSelection: true, maxRows: 1 });
+                            const usernameCol = getSetting('chatbotUsernameCol', '');
+                            const emailCol = getSetting('chatbotEmailCol', '');
+                            for (let c = 0; c < dt.columns.length; c++) {
+                                const fn = dt.columns[c].fieldName;
+                                if (fn === usernameCol && dt.data.length > 0)
+                                    username = dt.data[0][c].formattedValue || '';
+                                if (fn === emailCol && dt.data.length > 0)
+                                    email = dt.data[0][c].formattedValue || '';
+                            }
+                        } catch (e) {
+                            console.warn('[HierExt] Chatbot: could not read user info:', e);
+                        }
+                    }
+                }
+
+                // 2. Build payload with all config
+                const payload = JSON.stringify({
+                    apiUrl: getSetting('chatbotApiUrl', ''),
+                    apiMethod: getSetting('chatbotApiMethod', 'POST'),
+                    headers: getSetting('chatbotHeaders', '{}'),
+                    requestSchema: getSetting('chatbotRequestSchema', '{"message":"{{MESSAGE}}","username":"{{USERNAME}}","email":"{{EMAIL}}"}'),
+                    responseField: getSetting('chatbotResponseField', 'reply'),
+                    botName: getSetting('chatbotBotName', 'AI Assistant'),
+                    username: username,
+                    email: email
+                });
+
+                // 3. Open dialog — breaks out of iframe!
+                const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+                const dialogUrl = window.location.origin + basePath + 'chat_window.html';
+
+                await tableau.extensions.ui.displayDialogAsync(dialogUrl, payload, {
+                    width: 420,
+                    height: 650
+                });
+            } catch (e) {
+                // tableau.ErrorCodes.DialogClosedByUser is expected when user closes
+                if (e.errorCode !== tableau.ErrorCodes.DialogClosedByUser) {
+                    console.error('[HierExt] Chatbot dialog error:', e);
+                }
+            } finally {
+                if (fab) fab.style.pointerEvents = '';
+            }
+        }
+
+        function initChatbot() {
+            const fab = document.getElementById('chat-fab');
+            if (!fab) return;
+            const enabled = getSetting('chatbotEnabled', 'false') === 'true';
+            fab.style.display = enabled ? 'flex' : 'none';
         }
 
         /**
@@ -5667,11 +5962,24 @@
             s.set('kpiNegativeColor', document.getElementById('cfg-kpi-negative-color')?.value || '#e74c3c');
             s.set('kpiNeutralColor', document.getElementById('cfg-kpi-neutral-color')?.value || '#f39c12');
 
+            // Chatbot settings
+            s.set('chatbotEnabled', document.getElementById('cfg-chatbot-enabled')?.checked ? 'true' : 'false');
+            s.set('chatbotApiUrl', document.getElementById('cfg-chatbot-api-url')?.value || '');
+            s.set('chatbotApiMethod', document.getElementById('cfg-chatbot-api-method')?.value || 'POST');
+            s.set('chatbotHeaders', document.getElementById('cfg-chatbot-headers')?.value || '{}');
+            s.set('chatbotRequestSchema', document.getElementById('cfg-chatbot-request-schema')?.value || '{"message":"{{MESSAGE}}","username":"{{USERNAME}}","email":"{{EMAIL}}"}');
+            s.set('chatbotResponseField', document.getElementById('cfg-chatbot-response-field')?.value || 'reply');
+            s.set('chatbotUserWorksheet', document.getElementById('cfg-chatbot-user-ws')?.value || '');
+            s.set('chatbotUsernameCol', document.getElementById('cfg-chatbot-username-col')?.value || '');
+            s.set('chatbotEmailCol', document.getElementById('cfg-chatbot-email-col')?.value || '');
+            s.set('chatbotBotName', document.getElementById('cfg-chatbot-bot-name')?.value || 'AI Assistant');
+
             s.saveAsync().then(() => {
                 document.getElementById('config-ui').style.display = 'none';
                 document.getElementById('main-ui').style.display = 'flex';
                 applyStyles();
                 initTrendToggle();
+                initChatbot();
                 expandedNodes.clear();
                 activeSortCol = null;
                 activeSortDir = 'none';
