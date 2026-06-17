@@ -2939,16 +2939,45 @@
             return matchedCol ? matchedCol.displayName : null;
         }
 
-        function computeFilteredMetricValue(metricName) {
-            const rootNodes = Object.values(currentTree);
-            if (!rootNodes.length) return 0;
+        function findRootMostSelectedNodes(nodes, parentPath, teamPickSet, resultList) {
+            if (!nodes) return;
+            Object.values(nodes).forEach(node => {
+                const path = parentPath ? (parentPath + ' > ' + node.name) : node.name;
+                if (teamPickSet.has(path)) {
+                    resultList.push(node);
+                } else if (node.children) {
+                    findRootMostSelectedNodes(node.children, path, teamPickSet, resultList);
+                }
+            });
+        }
 
-            const firstNode = rootNodes[0];
+        function computeFilteredMetricValue(metricName) {
+            let teamPickSet = null;
+            if (lastTeamExplicitPaths) {
+                try {
+                    const arr = JSON.parse(lastTeamExplicitPaths);
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        teamPickSet = new Set(arr.map(p =>
+                            p.toString().split('|').map(s => s.trim()).join(' > ')));
+                    }
+                } catch (_) { /* malformed sync paths — show all */ }
+            }
+
+            let nodesToSum = [];
+            if (teamPickSet && teamPickSet.size > 0) {
+                findRootMostSelectedNodes(currentTree, '', teamPickSet, nodesToSum);
+            } else {
+                nodesToSum = Object.values(currentTree);
+            }
+
+            if (!nodesToSum.length) return 0;
+
+            const firstNode = nodesToSum[0];
             const isEmailDistinct = firstNode.emails && firstNode.emails[metricName] !== undefined;
 
             if (isEmailDistinct) {
                 const unionSet = new Set();
-                rootNodes.forEach(node => {
+                nodesToSum.forEach(node => {
                     if (node.emails && node.emails[metricName]) {
                         node.emails[metricName].forEach(email => unionSet.add(email));
                     }
@@ -2956,7 +2985,7 @@
                 return unionSet.size;
             } else {
                 let sum = 0;
-                rootNodes.forEach(node => {
+                nodesToSum.forEach(node => {
                     if (node.metrics && node.metrics[metricName] !== undefined) {
                         sum += node.metrics[metricName];
                     }
@@ -4270,11 +4299,27 @@
                     _firstLoadPendingTimer = null;
                 }
 
-                // Add stale/loading styling to the context bar but do NOT change its text!
+                // Reactively update dates, tools, and paths immediately so the context bar matches the sidebar
+                if (Array.isArray(sync.tools)) {
+                    _activeToolLabel = sync.tools.length === 0 ? '' : sync.tools.join(', ');
+                }
+                if (sync.startDate || sync.endDate) {
+                    const startLabel = sync.startDate ? formatDateForContextBar(sync.startDate) : '';
+                    const endLabel = sync.endDate ? formatDateForContextBar(sync.endDate) : '';
+                    _dateRangeLabel = startLabel && endLabel
+                        ? `${startLabel} – ${endLabel}`
+                        : (startLabel || endLabel);
+                }
+                if (Array.isArray(sync.paths)) {
+                    lastTeamExplicitPaths = JSON.stringify(sync.paths);
+                }
+
+                // Add stale/loading styling to the context bar
                 const contextBar = document.getElementById('filter-context-bar');
                 if (contextBar) {
                     contextBar.classList.add('stale');
                 }
+                renderFilterContextBar();
                 return;
             }
 
@@ -6202,6 +6247,11 @@
                 }
 
                 try {
+                    const kpiPromise = fetchKpiTileData().catch(e => {
+                        console.warn('[KPI] tile fetch error:', e);
+                        return [];
+                    });
+
                     // ── Raw DataTable fetch with cache ─────────────────────────────
                     // Check if we have a fresh cached DataTable set for this signature.
                     // Cache hits skip the Snowflake round-trip entirely (~50ms vs 5-30s).
@@ -6220,6 +6270,12 @@
                         if (ENABLE_BUILT_TREE_CACHE && cachedEntry.built && !forceCollapseOnNextFetch) {
                             ({ unfilteredTree, unfilteredPrevTree, colDefs } = cachedEntry.built);
                             activeTaColDefs = cachedEntry.built.activeTaColDefs || colDefs;
+
+                            if (cachedEntry.tables && cachedEntry.tables.kpiTileResults) {
+                                kpiTileResults = cachedEntry.tables.kpiTileResults;
+                            } else {
+                                kpiTileResults = await kpiPromise;
+                            }
 
                             // Calibrate slider and apply threshold filter
                             const maxCredits = findMaxLeafCredits(unfilteredTree);
@@ -6246,6 +6302,11 @@
                             return;
                         }
                         ({ splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable } = cachedEntry.tables);
+                        if (cachedEntry.tables && cachedEntry.tables.kpiTileResults) {
+                            kpiTileResults = cachedEntry.tables.kpiTileResults;
+                        } else {
+                            kpiTileResults = await kpiPromise;
+                        }
                         // Raw-cache hit — data tables reused but tree will rebuild from them.
                         // Show skeleton so the user sees the table refreshing.
                         if (isRefresh) showSkeletonTable();
@@ -6262,7 +6323,7 @@
                         showKpiLoading();
                         if (overlayEl) overlayEl.innerHTML = '<div class="spinner-sm"></div>Refreshing…';
                         tFetchStart = performance.now();
-                        [splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable] = await Promise.all([
+                        [splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable, kpiTileResults] = await Promise.all([
                             // Option B: ignoreSelection:false on splitWs so the applyFilterAsync
                             // L2 team filter from the filter extension is respected — only the
                             // selected team's rows are returned from Snowflake.
@@ -6274,6 +6335,7 @@
                             totalWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }),
                             splitPrevWs ? splitPrevWs.getSummaryDataAsync({ ignoreSelection: false, maxRows: 0 }) : Promise.resolve(null),
                             totalPrevWs ? totalPrevWs.getSummaryDataAsync({ ignoreSelection: true, maxRows: 0 }) : Promise.resolve(null),
+                            kpiPromise
                         ]);
                         tFetchDone = performance.now();
                         console.log(`[HierExt] ⏳ Snowflake/getSummaryDataAsync: ${((tFetchDone - tFetchStart) / 1000).toFixed(2)}s  ← this is where your wait time is`);
@@ -6281,7 +6343,7 @@
                         // Store in cache
                         if (lastDataSignature && splitDataTable) {
                             rawDataCache.set(lastDataSignature, {
-                                tables: { splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable },
+                                tables: { splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable, kpiTileResults },
                                 timestamp: Date.now()
                             });
                             // Evict oldest entry if over capacity
@@ -7496,23 +7558,11 @@
                     applyThresholdAndRender();
                     tRenderDone = performance.now();
 
-                    // Fetch and render KPI tiles (non-blocking — tree renders first)
-                    fetchKpiTileData().then(kpiResults => {
-                        kpiTileResults = kpiResults;
-                        updateAndRenderKpiTiles();
-                        const contextBar = document.getElementById('filter-context-bar');
-                        if (contextBar) {
-                            contextBar.classList.remove('stale');
-                        }
-                        renderFilterContextBar();
-                    }).catch(e => {
-                        console.warn('[KPI] tile fetch error:', e);
-                        const contextBar = document.getElementById('filter-context-bar');
-                        if (contextBar) {
-                            contextBar.classList.remove('stale');
-                        }
-                        renderFilterContextBar();
-                    });
+                    const contextBar = document.getElementById('filter-context-bar');
+                    if (contextBar) {
+                        contextBar.classList.remove('stale');
+                    }
+                    renderFilterContextBar();
 
                     // ── Performance summary ───────────────────────────────────────
                     // Open DevTools console to see where your seconds go.
