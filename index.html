@@ -1864,6 +1864,12 @@
             gap: 0;
         }
 
+        #filter-context-bar.stale {
+            opacity: 0.55;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+
         .ctx-chip {
             display: inline-flex;
             align-items: center;
@@ -3441,6 +3447,13 @@
                 return;
             }
 
+            // If we are currently suppressed by a filter apply cycle, do not render/update the text!
+            // Just ensure the stale class is present.
+            if (suppressedByFilterApply) {
+                bar.classList.add('stale');
+                return;
+            }
+
             const e = escHtml || (s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
             const chip = (label, val, isActive) =>
@@ -4199,25 +4212,25 @@
             const sync = parseSyncParam(raw);
             if (!sync) return;
 
-            // Reactively update team paths and tool label from the sync param
-            // so the context bar reflects the new selection immediately —
-            // before the full data fetch (which can be slow on Snowflake)
-            // completes.
-            if (Array.isArray(sync.paths)) {
-                lastTeamExplicitPaths = JSON.stringify(sync.paths);
-            }
-            if (Array.isArray(sync.tools)) {
-                _activeToolLabel = sync.tools.length === 0 ? '' : sync.tools.join(', ');
-            }
-            if (sync.startDate || sync.endDate) {
-                const startLabel = sync.startDate ? formatDateForContextBar(sync.startDate) : '';
-                const endLabel = sync.endDate ? formatDateForContextBar(sync.endDate) : '';
-                _dateRangeLabel = startLabel && endLabel
-                    ? `${startLabel} – ${endLabel}`
-                    : (startLabel || endLabel);
-            }
-
             if (isInitial) {
+                // Reactively update team paths and tool label from the sync param
+                // so the context bar reflects the new selection immediately —
+                // before the full data fetch (which can be slow on Snowflake)
+                // completes.
+                if (Array.isArray(sync.paths)) {
+                    lastTeamExplicitPaths = JSON.stringify(sync.paths);
+                }
+                if (Array.isArray(sync.tools)) {
+                    _activeToolLabel = sync.tools.length === 0 ? '' : sync.tools.join(', ');
+                }
+                if (sync.startDate || sync.endDate) {
+                    const startLabel = sync.startDate ? formatDateForContextBar(sync.startDate) : '';
+                    const endLabel = sync.endDate ? formatDateForContextBar(sync.endDate) : '';
+                    _dateRangeLabel = startLabel && endLabel
+                        ? `${startLabel} – ${endLabel}`
+                        : (startLabel || endLabel);
+                }
+
                 lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : null;
                 renderFilterContextBar();
                 // If the filter extension is already mid-apply when we start up
@@ -4241,6 +4254,7 @@
                 }
                 return;
             }
+
             if (sync.applyActive === '1') {
                 suppressedByFilterApply = true;
                 suppressNextEventsFor(30000);
@@ -4253,9 +4267,15 @@
                     clearTimeout(_firstLoadPendingTimer);
                     _firstLoadPendingTimer = null;
                 }
-                renderFilterContextBar();
+
+                // Add stale/loading styling to the context bar but do NOT change its text!
+                const contextBar = document.getElementById('filter-context-bar');
+                if (contextBar) {
+                    contextBar.classList.add('stale');
+                }
                 return;
             }
+
             if (suppressedByFilterApply) {
                 suppressedByFilterApply = false;
                 forceCollapseOnNextFetch = true;
@@ -4270,20 +4290,17 @@
                 // the visual extension once they settle.
                 suppressNextEventsFor(2000);
                 console.log('[visual-ext] sync param: applyActive cleared → one definitive fetch, suppress extended 2 s');
-                renderFilterContextBar();
+
+                // Keep the stale class active during the fetch!
+                const contextBar = document.getElementById('filter-context-bar');
+                if (contextBar) {
+                    contextBar.classList.add('stale');
+                }
+
                 // Wait 500ms before fetching: applyFilterAsync resolves before
                 // the filter is fully committed to the worksheet's selection
                 // state; an immediate getSummaryDataAsync may still return
                 // unfiltered rows. Negligible vs Snowflake latency.
-                //
-                // CRITICAL: fetchDataAndRender() silently no-ops while another
-                // fetch is in flight (fetchInProgress guard) and its pendingFetch
-                // queue is discarded under suppression — so a bare setTimeout
-                // call here could be DROPPED entirely when a prior fetch is
-                // still running (common on quick successive team picks, e.g.
-                // drilling L2 → L3), leaving a stale tree while the KPI tiles
-                // already show the new scope. Retry until the slot is free so
-                // the definitive fetch ALWAYS runs.
                 const fireDefinitiveFetch = (attempt) => {
                     if (fetchInProgress) {
                         if (attempt < 60) {
@@ -4298,13 +4315,11 @@
                 setTimeout(() => fireDefinitiveFetch(0), 500);
                 return;
             }
+
             const stamp = sync.stamp != null ? String(sync.stamp) : null;
             if (stamp && stamp !== lastTeamSelectionStamp) {
                 lastTeamSelectionStamp = stamp;
-                // No debouncedFetch() here — FilterChanged from applyFilterAsync
-                // already armed it, and the changed paths bust the signature.
             }
-            renderFilterContextBar();
         }
 
         function suppressNextEventsFor(ms) {
@@ -7469,8 +7484,19 @@
                     fetchKpiTileData().then(kpiResults => {
                         kpiTileResults = kpiResults;
                         updateAndRenderKpiTiles();
+                        const contextBar = document.getElementById('filter-context-bar');
+                        if (contextBar) {
+                            contextBar.classList.remove('stale');
+                        }
                         renderFilterContextBar();
-                    }).catch(e => console.warn('[KPI] tile fetch error:', e));
+                    }).catch(e => {
+                        console.warn('[KPI] tile fetch error:', e);
+                        const contextBar = document.getElementById('filter-context-bar');
+                        if (contextBar) {
+                            contextBar.classList.remove('stale');
+                        }
+                        renderFilterContextBar();
+                    });
 
                     // ── Performance summary ───────────────────────────────────────
                     // Open DevTools console to see where your seconds go.
@@ -7516,6 +7542,13 @@
                 }
             } finally {
                 fetchInProgress = false;
+                const contextBar = document.getElementById('filter-context-bar');
+                if (contextBar) {
+                    // Safety: if there is no pending fetch, remove stale class
+                    if (!pendingFetch) {
+                        contextBar.classList.remove('stale');
+                    }
+                }
                 // Only honour pendingFetch if suppress is not active.
                 // A stale event that arrived while the 45 s post-apply suppress
                 // was expiring would set pendingFetch=true but shouldn't trigger
