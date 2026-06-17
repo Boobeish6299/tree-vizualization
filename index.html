@@ -3013,12 +3013,9 @@
         function updateAndRenderKpiTiles() {
             if (!kpiTileResults || kpiTileResults.length === 0) return;
 
-            const hasTeamFilter = lastTeamExplicitPaths && (() => {
-                try {
-                    const arr = JSON.parse(lastTeamExplicitPaths);
-                    return Array.isArray(arr) && arr.length > 0;
-                } catch (_) { return false; }
-            })();
+            // Note: KPI worksheets in Tableau now have the 'Team In Selection' calculated filter
+            // applied as a native slice, so tile.value already reflects the active team filter.
+            // We only need to compute filteredValue for the credit threshold split mode display.
 
             const updatedTiles = kpiTileResults.map(tile => {
                 if (tile.type !== 'metric') return tile;
@@ -3032,46 +3029,10 @@
                 const metricName = findTreeMetricForKpi(tile.title);
                 if (!metricName) return tile;
 
-                // filteredVal: team-filtered + threshold-filtered (currentTree). Used for split FILTERED column.
+                // filteredVal: team-filtered + threshold-filtered value from currentTree.
+                // Used only for the FILTERED column in split mode (credit threshold > 0).
                 const filteredVal = computeFilteredMetricValueEx(metricName, currentTree);
-
-                if (!hasTeamFilter) {
-                    // No team filter active — just propagate threshold-filtered value for split mode
-                    return { ...tile, filteredValue: filteredVal };
-                }
-
-                // Team filter is active — compute values from unfilteredTree/unfilteredPrevTree
-                // so that KPI tiles respect the team selection in both split and non-split modes.
-
-                // teamFilteredVal: team-filtered, threshold-unfiltered (unfilteredTree) — the primary displayed value
-                const teamFilteredVal = computeFilteredMetricValueEx(metricName, unfilteredTree);
-
-                // prevTeamFilteredVal: team-filtered previous period value — used for delta calculation
-                const prevTeamFilteredVal = unfilteredPrevTree
-                    ? computeFilteredMetricValueEx(metricName, unfilteredPrevTree)
-                    : null;
-
-                // Recompute delta/deltaPercent using team-filtered values
-                let newDelta = null;
-                let newDeltaPercent = null;
-                if (prevTeamFilteredVal !== null && prevTeamFilteredVal !== undefined) {
-                    newDelta = teamFilteredVal - prevTeamFilteredVal;
-                    newDeltaPercent = prevTeamFilteredVal !== 0
-                        ? (newDelta / Math.abs(prevTeamFilteredVal)) * 100
-                        : null;
-                }
-
-                return {
-                    ...tile,
-                    // Override primary value with team-filtered total (no threshold)
-                    value: teamFilteredVal,
-                    rawValue: teamFilteredVal,
-                    // Override delta with team-filtered comparison
-                    delta: newDelta !== null ? newDelta : tile.delta,
-                    deltaPercent: newDeltaPercent !== null ? newDeltaPercent : tile.deltaPercent,
-                    // filteredValue: team + threshold filtered, shown in split mode FILTERED column
-                    filteredValue: filteredVal
-                };
+                return { ...tile, filteredValue: filteredVal };
             });
 
             renderKpiTiles(filterKpiResultsByTool(updatedTiles));
