@@ -4224,11 +4224,13 @@
                     _activeToolLabel = sync.tools.length === 0 ? '' : sync.tools.join(', ');
                 }
                 if (sync.startDate || sync.endDate) {
-                    const startLabel = sync.startDate ? formatDateForContextBar(sync.startDate) : '';
-                    const endLabel = sync.endDate ? formatDateForContextBar(sync.endDate) : '';
-                    _dateRangeLabel = startLabel && endLabel
-                        ? `${startLabel} – ${endLabel}`
-                        : (startLabel || endLabel);
+                    if (!_dateRangeLabel) {
+                        const startLabel = sync.startDate ? formatDateForContextBar(sync.startDate) : '';
+                        const endLabel = sync.endDate ? formatDateForContextBar(sync.endDate) : '';
+                        _dateRangeLabel = startLabel && endLabel
+                            ? `${startLabel} – ${endLabel}`
+                            : (startLabel || endLabel);
+                    }
                 }
 
                 lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : null;
@@ -4408,6 +4410,29 @@
                 // listeners we'd register here would leak (we already discarded
                 // their unregister fns above). Bail out instead.
                 if (myGen !== setupGeneration) return;
+
+                // Pre-initialize _dateRangeLabel and _selectedModelsParamValue from active workbook parameters
+                let startVal = '';
+                let endVal = '';
+                params.forEach(p => {
+                    const n = (p.name || '').toLowerCase();
+                    if (n.includes('start date') || n === 'start date') {
+                        const v = p.currentValue && p.currentValue.value;
+                        startVal = v != null ? v.toString() : '';
+                    } else if (n.includes('end date') || n === 'end date') {
+                        const v = p.currentValue && p.currentValue.value;
+                        endVal = v != null ? v.toString() : '';
+                    } else if (p.name === 'Selected Models') {
+                        const _readVal = v => (v != null ? String(v) : 'all').toLowerCase().trim() || 'all';
+                        _selectedModelsParamValue = _readVal(p.currentValue && p.currentValue.value);
+                    }
+                });
+                if (startVal || endVal) {
+                    _dateRangeLabel = startVal && endVal
+                        ? `${formatDateForContextBar(startVal)} – ${formatDateForContextBar(endVal)}`
+                        : formatDateForContextBar(startVal || endVal);
+                }
+
                 let syncParamFound = false;
                 params.forEach(p => {
                     if (p.name === SYNC_PARAM_NAME) {
@@ -6218,10 +6243,6 @@
                             if (overlayEl) overlayEl.classList.remove('visible');
                             if (!isRefresh) { loadingEl.style.display = 'none'; toolbarEl.style.display = 'flex'; }
                             console.log('[HierExt] built-tree cache-hit: loaded raw tree & applied threshold for sig:', lastDataSignature);
-                            // Auto-expand credit groups when model filter is active
-                            if (_selectedModelsParamValue && _selectedModelsParamValue !== 'all') {
-                                colDefs.forEach(c => { if (c.groupTool) expandedCreditTools.add(c.groupTool); });
-                            }
                             return;
                         }
                         ({ splitDataTable, totalDataTable, splitPrevDataTable, totalPrevDataTable } = cachedEntry.tables);
@@ -6674,11 +6695,6 @@
                                 return out;
                             };
                             colDefs = regroupColDefs(applyColDisplaySettings(taColDefs, isMultiTool, detectedTools));
-                            // Auto-expand credit groups when specific models are selected so
-                            // users see model-level rows immediately without clicking [+].
-                            if (_selectedModelsParamValue && _selectedModelsParamValue !== 'all') {
-                                colDefs.forEach(c => { if (c.groupTool) expandedCreditTools.add(c.groupTool); });
-                            }
 
 
                             // Detect hierarchy columns DIRECTLY from splitDataTable and totalDataTable.
