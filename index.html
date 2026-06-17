@@ -2672,6 +2672,7 @@
         let currentTree = {};
         let unfilteredTree = {};     // Store raw merged tree before threshold filter
         let unfilteredPrevTree = null; // Store raw merged previous period tree
+        let currentPrevTree = null;    // Store threshold-filtered previous period tree
         let activeTaColDefs = [];    // Global copy of taColDefs for re-aggregation
         let currentThreshold = 0;    // Active credit threshold
         // Cached parent-path set rebuilt only when currentTree changes (i.e. on
@@ -2873,6 +2874,7 @@
 
             // 1. Reset caches that depend on tree shape or sorting
             _cachedParentPaths = null; 
+            currentPrevTree = null;
 
             // 2. Clone and filter currentTree
             currentTree = cloneTree(unfilteredTree);
@@ -2894,6 +2896,7 @@
                 aggregateTree(prevTree, activeTaColDefs, '');
                 evaluateCalculatedMetrics(prevTree, activeTaColDefs);
                 
+                currentPrevTree = prevTree;
                 prevKeyMap = {};
                 flattenTreeToKeyMap(prevTree, prevKeyMap, '', activeTaColDefs);
             }
@@ -2951,7 +2954,15 @@
             });
         }
 
-        function computeFilteredMetricValue(metricName) {
+        /**
+         * Compute a team-filtered metric value from any tree object.
+         * @param {string} metricName - The metric key to sum.
+         * @param {Object} tree - The tree object (e.g. currentTree, unfilteredTree, unfilteredPrevTree).
+         * @returns {number} The team-filtered metric total.
+         */
+        function computeFilteredMetricValueEx(metricName, tree) {
+            if (!tree || Object.keys(tree).length === 0) return 0;
+
             let teamPickSet = null;
             if (lastTeamExplicitPaths) {
                 try {
@@ -2965,9 +2976,9 @@
 
             let nodesToSum = [];
             if (teamPickSet && teamPickSet.size > 0) {
-                findRootMostSelectedNodes(currentTree, '', teamPickSet, nodesToSum);
+                findRootMostSelectedNodes(tree, '', teamPickSet, nodesToSum);
             } else {
-                nodesToSum = Object.values(currentTree);
+                nodesToSum = Object.values(tree);
             }
 
             if (!nodesToSum.length) return 0;
@@ -2994,8 +3005,20 @@
             }
         }
 
+        /** Backward-compatible wrapper: computes team-filtered value from currentTree (threshold-filtered). */
+        function computeFilteredMetricValue(metricName) {
+            return computeFilteredMetricValueEx(metricName, currentTree);
+        }
+
         function updateAndRenderKpiTiles() {
             if (!kpiTileResults || kpiTileResults.length === 0) return;
+
+            const hasTeamFilter = lastTeamExplicitPaths && (() => {
+                try {
+                    const arr = JSON.parse(lastTeamExplicitPaths);
+                    return Array.isArray(arr) && arr.length > 0;
+                } catch (_) { return false; }
+            })();
 
             const updatedTiles = kpiTileResults.map(tile => {
                 if (tile.type !== 'metric') return tile;
@@ -3009,9 +3032,44 @@
                 const metricName = findTreeMetricForKpi(tile.title);
                 if (!metricName) return tile;
 
-                const filteredVal = computeFilteredMetricValue(metricName);
+                // filteredVal: team-filtered + threshold-filtered (currentTree). Used for split FILTERED column.
+                const filteredVal = computeFilteredMetricValueEx(metricName, currentTree);
+
+                if (!hasTeamFilter) {
+                    // No team filter active — just propagate threshold-filtered value for split mode
+                    return { ...tile, filteredValue: filteredVal };
+                }
+
+                // Team filter is active — compute values from unfilteredTree/unfilteredPrevTree
+                // so that KPI tiles respect the team selection in both split and non-split modes.
+
+                // teamFilteredVal: team-filtered, threshold-unfiltered (unfilteredTree) — the primary displayed value
+                const teamFilteredVal = computeFilteredMetricValueEx(metricName, unfilteredTree);
+
+                // prevTeamFilteredVal: team-filtered previous period value — used for delta calculation
+                const prevTeamFilteredVal = unfilteredPrevTree
+                    ? computeFilteredMetricValueEx(metricName, unfilteredPrevTree)
+                    : null;
+
+                // Recompute delta/deltaPercent using team-filtered values
+                let newDelta = null;
+                let newDeltaPercent = null;
+                if (prevTeamFilteredVal !== null && prevTeamFilteredVal !== undefined) {
+                    newDelta = teamFilteredVal - prevTeamFilteredVal;
+                    newDeltaPercent = prevTeamFilteredVal !== 0
+                        ? (newDelta / Math.abs(prevTeamFilteredVal)) * 100
+                        : null;
+                }
+
                 return {
                     ...tile,
+                    // Override primary value with team-filtered total (no threshold)
+                    value: teamFilteredVal,
+                    rawValue: teamFilteredVal,
+                    // Override delta with team-filtered comparison
+                    delta: newDelta !== null ? newDelta : tile.delta,
+                    deltaPercent: newDeltaPercent !== null ? newDeltaPercent : tile.deltaPercent,
+                    // filteredValue: team + threshold filtered, shown in split mode FILTERED column
                     filteredValue: filteredVal
                 };
             });
