@@ -2605,9 +2605,8 @@
          MAIN UI
          ================================================================ -->
     <div id="main-ui">
-        <div id="loading">
+        <div id="loading" style="display: none;">
             <div class="spinner"></div>
-            <span>Initializing extension…</span>
         </div>
 
         <!-- KPI Tiles -->
@@ -3437,6 +3436,11 @@
             const bar = document.getElementById('filter-context-bar');
             if (!bar) return;
 
+            if (!hasLoadedOnce) {
+                bar.style.display = 'none';
+                return;
+            }
+
             const e = escHtml || (s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
             const chip = (label, val, isActive) =>
@@ -3680,6 +3684,11 @@
             const container = document.getElementById('kpi-tiles-container');
             const row = document.getElementById('kpi-tiles-row');
             if (!container || !row) return;
+
+            if (!hasLoadedOnce) {
+                container.style.display = 'none';
+                return;
+            }
 
             if (!results || results.length === 0) {
                 container.style.display = 'none';
@@ -4200,6 +4209,13 @@
             if (Array.isArray(sync.tools)) {
                 _activeToolLabel = sync.tools.length === 0 ? '' : sync.tools.join(', ');
             }
+            if (sync.startDate || sync.endDate) {
+                const startLabel = sync.startDate ? formatDateForContextBar(sync.startDate) : '';
+                const endLabel = sync.endDate ? formatDateForContextBar(sync.endDate) : '';
+                _dateRangeLabel = startLabel && endLabel
+                    ? `${startLabel} – ${endLabel}`
+                    : (startLabel || endLabel);
+            }
 
             if (isInitial) {
                 lastTeamSelectionStamp = sync.stamp != null ? String(sync.stamp) : null;
@@ -4431,11 +4447,21 @@
             // on the sync parameter (absent, disabled, or misconfigured), fetch
             // independently so the tree is not permanently blank.
             if (!hasLoadedOnce) {
-                // Hide generic loading screen and show skeleton loaders immediately
+                // Hide main loading container
                 const loadingEl = document.getElementById('loading');
                 if (loadingEl) loadingEl.style.display = 'none';
                 showSkeletonTable();
                 showKpiLoading();
+
+                // Hide context bar and toolbar until data is ready, but keep KPI container and table wrapper visible
+                const contextBar = document.getElementById('filter-context-bar');
+                if (contextBar) contextBar.style.display = 'none';
+                const kpis = document.getElementById('kpi-tiles-container');
+                if (kpis) kpis.style.display = '';
+                const toolbar = document.getElementById('tree-toolbar');
+                if (toolbar) toolbar.style.display = 'none';
+                const tableWrapper = document.getElementById('table-wrapper');
+                if (tableWrapper) tableWrapper.style.display = '';
 
                 // Fallback timer reduced 15 000 → 5 000 ms.  If the filter
                 // extension is absent or misconfigured we should not keep the tree
@@ -6048,11 +6074,15 @@
                     // pendingFetch re-entry) calls renderTable() without fetching.
                     if (overlayEl) overlayEl.classList.remove('visible');
                 } else {
-                    // First load: show skeletons instead of full screen spinner.
+                    // First load: hide main loading screen, keep skeletons visible
                     loadingEl.style.display = 'none';
                     toolbarEl.style.display = 'none';
                     showSkeletonTable();
                     showKpiLoading();
+                    const tableWrapper = document.getElementById('table-wrapper');
+                    if (tableWrapper) tableWrapper.style.display = '';
+                    const kpis = document.getElementById('kpi-tiles-container');
+                    if (kpis) kpis.style.display = '';
                 }
 
                 const dashboard = tableau.extensions.dashboardContent.dashboard;
@@ -7463,15 +7493,17 @@
                         // Refresh: overlay was shown over existing data — just hide it
                         if (overlayEl) overlayEl.classList.remove('visible');
                     } else {
-                        // First load: hide spinner, show toolbar
+                        // First load: hide spinner, show toolbar and table-wrapper
                         loadingEl.style.display = 'none';
                         toolbarEl.style.display = 'flex';
-                        // Make sure toolbar stays visible on subsequent refreshes too
-                        if (toolbarEl.style.display === 'none') toolbarEl.style.display = 'flex';
+                        const tableWrapper = document.getElementById('table-wrapper');
+                        if (tableWrapper) tableWrapper.style.display = '';
                     }
-                    // Always ensure toolbar is shown after a successful render
+                    // Always ensure toolbar and table wrapper are shown after a successful render
                     toolbarEl.style.display = 'flex';
                     loadingEl.style.display = 'none';
+                    const tableWrapper = document.getElementById('table-wrapper');
+                    if (tableWrapper) tableWrapper.style.display = '';
 
                 } catch (err) {
                     // On error during a refresh: hide overlay and show error in loading area
