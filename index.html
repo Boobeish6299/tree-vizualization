@@ -2886,6 +2886,7 @@
             aggregateTree(currentTree, activeTaColDefs, '');
             evaluateCalculatedMetrics(currentTree, activeTaColDefs);
             pruneRedundantSelfNodes(currentTree);
+            pruneAllZeroNodes(currentTree);
 
             // 4. Clone and filter prevTree (if configured)
             if (unfilteredPrevTree && Object.keys(unfilteredPrevTree).length > 0) {
@@ -2895,6 +2896,7 @@
                 }
                 aggregateTree(prevTree, activeTaColDefs, '');
                 evaluateCalculatedMetrics(prevTree, activeTaColDefs);
+                pruneAllZeroNodes(prevTree);
                 
                 currentPrevTree = prevTree;
                 prevKeyMap = {};
@@ -6151,8 +6153,29 @@
         }
 
         let _fetchRenderCount = 0; // diagnostic counter — visible in console
+        let needsFetchOnVisible = false;
+
+        function isVisible() {
+            return window.innerWidth > 0 && window.innerHeight > 0 && !document.hidden;
+        }
+
+        function handleVisibilityOrResize() {
+            if (isVisible() && needsFetchOnVisible) {
+                needsFetchOnVisible = false;
+                console.log('[HierExt] Extension visibility/size restored. Triggering pending fetch.');
+                fetchDataAndRender();
+            }
+        }
+
+        window.addEventListener('resize', handleVisibilityOrResize);
+        document.addEventListener('visibilitychange', handleVisibilityOrResize);
 
         async function fetchDataAndRender() {
+            if (!isVisible()) {
+                needsFetchOnVisible = true;
+                console.log('[HierExt] fetchDataAndRender: extension is hidden. Deferring fetch until visible.');
+                return;
+            }
             if (fetchInProgress) return;
             fetchInProgress = true;
             const _callId = ++_fetchRenderCount;
@@ -7898,6 +7921,38 @@
                     }
                 }
             });
+        }
+
+        /** Recursively prune nodes that have all zero/null/undefined metrics (except denominators) */
+        function pruneAllZeroNodes(nodes) {
+            if (!nodes) return false;
+            let anyRemaining = false;
+            for (const [key, node] of Object.entries(nodes)) {
+                const hasChildren = node.children && Object.keys(node.children).length > 0;
+                if (hasChildren) {
+                    const childrenRemaining = pruneAllZeroNodes(node.children);
+                    if (!childrenRemaining) {
+                        delete nodes[key];
+                    } else {
+                        anyRemaining = true;
+                    }
+                } else {
+                    let allZero = true;
+                    for (const [mKey, val] of Object.entries(node.metrics)) {
+                        if (mKey.includes('__den')) continue;
+                        if (val !== 0 && val !== null && val !== undefined) {
+                            allZero = false;
+                            break;
+                        }
+                    }
+                    if (allZero) {
+                        delete nodes[key];
+                    } else {
+                        anyRemaining = true;
+                    }
+                }
+            }
+            return anyRemaining;
         }
 
         /** Flatten tree into a key map for previous period lookup
